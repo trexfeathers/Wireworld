@@ -1,5 +1,9 @@
+"""
+2019-05     Martin Yeo
+A python demonstration of Wireworld Cellular Automation (https://en.wikipedia.org/wiki/Wireworld)
+"""
+
 import numpy as np
-import pprint
 import tkinter as tk
 from copy import deepcopy
 
@@ -18,19 +22,19 @@ color_lookup = (None, "#0000ff", "#ff0000", "#ffff00")
 
 
 class WireCell(tk.Button):
-    def __init__(self, row, column, state=0, master=None):
+    # WireCell is a tkinter button that handles the advancement of its Wireworld state and stores this in an array.
+    # It is generated, along with the state array, by the load_array function.
+    # Accepts positional coordinates and an initial state as arguments, as well as the standard master.
+    def __init__(self, row_input, column_input, state=0, master=None):
         super().__init__(master)
         self.master = master
 
-        self.row = row
-        self.column = column
+        # Won't want to overwrite the position occupied by the time label.
+        base_column = master.time_label.grid_info()["column"] + 1
+
+        self.row, self.column = row_input, column_input
+        self.grid(row=self.row, column=self.column + base_column)
         self.state_change(state)
-
-    def __repr__(self):
-        return str(self.state) if self.state > 0 else '_'
-
-    def __str__(self):
-        return str(self.state) if self.state > 0 else '_'
 
     def state_change(self, state):
         if state in valid_states:
@@ -38,8 +42,10 @@ class WireCell(tk.Button):
         else:
             self.state = 0
 
+        # Store state in numpy array for easy calculations.
         array_states[self.row][self.column] = self.state
 
+        # Represent the Wireworld states using the accepted colours.
         target_colour = color_lookup[self.state]
         self.configure(
             background=target_colour,
@@ -47,32 +53,53 @@ class WireCell(tk.Button):
         )
 
     def cycle_states(self):
+        # Check the cell's own state and its surroundings to provide the next state in line with Wireworld rules.
         state_future = None
 
         if self.state in (1, 2):
             state_future = self.state + 1
         elif self.state == 3:
+            # Conductors will change to heads if they have exactly 1 or 2 neighbouring heads.
+            # Use numpy slicing to get the neighbours, then numpy where to filter them.
             slice_limits = [self.row - 1, self.row + 2, self.column - 1, self.column + 2]
-            slice_limits = [max(x, 0) for x in slice_limits]
+            slice_limits = [max(x, 0) for x in slice_limits]    # change negatives to 0
             head_check = array_states[slice_limits[0]:slice_limits[1], slice_limits[2]:slice_limits[3]]
             head_check = np.where(head_check == 1, 1, 0)
             head_check = sum(sum(head_check))
 
-            if head_check > 0:
+            if head_check in (1, 2):
                 state_future = 1
 
+        # Avoid any processing for empty cells.
         if state_future is not None:
             self.state_change(state_future)
 
 
 class GUI(tk.Frame):
+    # GUI is created once within the module, then worked with globally by all functions.
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
         self.pack()
 
+        self.create_label()
+
+    def create_label(self):
+        # Label to hold the current time step.
+        self.time_label_text = tk.StringVar()
+        self.time_label = tk.Label(master=self, textvariable=self.time_label_text)
+        self.time_label.grid(row=0, column=0)
+
+        self.update_label()
+
+    def update_label(self):
+        # Get the latest time step and apply it to the time label's variable
+        global time_ticker
+        self.time_label_text.set(str(time_ticker))
+
 
 def array_format_check(array_input):
+    # A basic check to make sure the input array has properties that can be worked with
     format_ok = False
     try:
         format_ok = (np.array(array_input).ndim == 2)
@@ -84,38 +111,65 @@ def array_format_check(array_input):
 def load_array(array_input):
     array_format_check(array_input)
 
-    root = tk.Tk()
-    gui = GUI(master=root)
-
-    array_buttons = deepcopy(array_input)
+    # Several functions will need to work with the list of buttons and with the array of states.
+    global list_buttons
     global array_states
+
+    list_buttons = []
     array_states = np.array(deepcopy(array_input))
+    # Iterate over the rows then the columns of the input array,
+    # creating a new button in the appropriate GUI grid position.
     for rx, r in enumerate(array_input):
         for cx, c in enumerate(r):
-            new_cell = WireCell(master=gui, state=c, row=rx, column=cx)
-            new_cell.grid(row=rx, column=cx)
-            array_buttons[rx][cx] = new_cell
-
-    return array_buttons, array_states, gui
+            new_cell = WireCell(master=gui, state=c, row_input=rx, column_input=cx)
+            list_buttons.append(new_cell)
 
 
 def advance_time():
-    for r in array_buttons:
-        for c in r:
-            c.cycle_states()
+    # All cells calculate their next state when time advances.
+    for b in list_buttons:
+        b.cycle_states()
+
+    # Update the time ticker and the GUI label accordingly.
+    global time_ticker
+    time_ticker += 1
+    gui.update_label()
 
 
-if __name__ == '__main__':
-    array_buttons, array_states, gui_1 = load_array(default_array)
+def print_states():
+    # Print a readable format of the state array in the terminal. Format empty cells as hyphens.
+    array_print = deepcopy(array_states)
+    array_print = np.where(array_print == 0, '-', array_print)
 
-    pprint.pprint(array_states)
+    print('\n'.join( [''.join( ['{:3}'.format(c) for c in r] ) for r in array_print] ))
+
+
+def demo():
+    # Displays the default array for a moment, advances time once, displays the result.
+    load_array(default_array)
+    print("\n-- START --\n")
+    print_states()
+    gui.update()
+    gui.after(2000)
 
     advance_time()
     print("\n-- TIME ADVANCE --\n")
 
-    array_buttons, array_states, gui_2 = load_array(default_array)
+    print_states()
+    gui.update()
+    gui.after(2000)
 
-    pprint.pprint(array_states)
+    print("\n-- END --\n")
 
-    gui_1.mainloop()
-    gui_2.mainloop()
+
+if __name__ == '__main__':
+    # Initiate the core architecture.
+    time_ticker = 0
+    tk_root = tk.Tk()
+    gui = GUI(master=tk_root)
+
+    try:
+        demo()
+    finally:
+        # Close down the GUI no matter what.
+        tk_root.destroy()
