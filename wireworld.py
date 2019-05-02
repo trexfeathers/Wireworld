@@ -6,6 +6,8 @@ A python demonstration of Wireworld Cellular Automation (https://en.wikipedia.or
 import numpy as np
 import tkinter as tk
 from copy import deepcopy
+import yaml
+import os.path
 
 default_array = [
     [0, 0, 0, 3, 0, 0, 0],
@@ -142,6 +144,17 @@ def print_states():
     array_print = np.where(array_print == 0, '-', array_print)
 
     print('\n'.join( [''.join( ['{:3}'.format(c) for c in r] ) for r in array_print] ))
+
+
+def save_file(path):
+    save_yaml = yaml.dump(array_states)
+    if os.path.isfile(path):
+        check_overwrite = input("File already exists, overwrite? (y/n)")
+    if check_overwrite == 'y':
+        try:
+            f = open(path, "w+")
+        except:
+            print("Error accessing path, please try a different path")
 
 
 def demo():
