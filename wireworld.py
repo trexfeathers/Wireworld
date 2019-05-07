@@ -40,42 +40,14 @@ class WireCell(tk.Button):
         self.state_change(state)
 
     def state_change(self, state):
-        if state in valid_states:
-            self.state = state
-        else:
-            self.state = 0
-
-        # Store state in numpy array for easy calculations.
-        array_states[self.row][self.column] = self.state
+        self.state = state
 
         # Represent the Wireworld states using the accepted colours.
         target_colour = color_lookup[self.state]
         self.configure(
             background=target_colour,
             activebackground=target_colour
-        )
-
-    def cycle_states(self):
-        # Check the cell's own state and its surroundings to provide the next state in line with Wireworld rules.
-        state_future = None
-
-        if self.state in (1, 2):
-            state_future = self.state + 1
-        elif self.state == 3:
-            # Conductors will change to heads if they have exactly 1 or 2 neighbouring heads.
-            # Use numpy slicing to get the neighbours, then numpy where to filter them.
-            slice_limits = [self.row - 1, self.row + 2, self.column - 1, self.column + 2]
-            slice_limits = [max(x, 0) for x in slice_limits]    # change negatives to 0
-            head_check = array_states[slice_limits[0]:slice_limits[1], slice_limits[2]:slice_limits[3]]
-            head_check = np.where(head_check == 1, 1, 0)
-            head_check = sum(sum(head_check))
-
-            if head_check in (1, 2):
-                state_future = 1
-
-        # Avoid any processing for empty cells.
-        if state_future is not None:
-            self.state_change(state_future)
+        )s
 
 
 class GUI(tk.Frame):
@@ -114,17 +86,8 @@ class GUI(tk.Frame):
             command=lambda: self.save_file()
         )
 
-        self.test_button = tk.Button(
-            master=self,
-            text="Test",
-            command=lambda: test_function()
-        )
-
         self.advance_button.grid(row=1, column=0)
         self.save_button.grid(row=3, column=0)
-        self.test_button.grid(row=5, column=0)
-
-
 
     def save_file(self):
         self.set_directory(is_save_mode=True)
@@ -175,14 +138,53 @@ def load_array(array_input):
     # creating a new button in the appropriate GUI grid position.
     for rx, r in enumerate(array_input):
         for cx, c in enumerate(r):
-            new_cell = WireCell(master=gui, state=c, row_input=rx, column_input=cx)
+            state = c
+            if state not in valid_states:
+                state = 0
+
+            new_cell = WireCell(master=gui, state=state, row_input=rx, column_input=cx)
             list_buttons.append(new_cell)
+
+
+def cycle_states():
+    # Check the cell's own state and its surroundings to provide the next state in line with Wireworld rules.
+
+    global array_states
+
+    array_states_future = deepcopy(array_states)
+    for rx, r in enumerate(array_states):
+        for cx, c in enumerate(r):
+            state = c
+            state_future = None
+
+            if state in (1, 2):
+                state_future = c + 1
+            elif state == 3:
+                # Conductors will change to heads if they have exactly 1 or 2 neighbouring heads.
+                # Use numpy slicing to get the neighbours, then numpy where to filter them.
+                slice_limits = [rx - 1, rx + 2, cx - 1, cx + 2]
+                slice_limits = [max(x, 0) for x in slice_limits]  # change negatives to 0
+                head_check = array_states[slice_limits[0]:slice_limits[1], slice_limits[2]:slice_limits[3]]
+                head_check = np.where(head_check == 1, 1, 0)
+                head_check = sum(sum(head_check))
+
+                if head_check in (1, 2):
+                    state_future = 1
+
+            # Avoid any processing for empty cells.
+            if state_future is not None:
+                array_states_future[rx][cx] = state_future
+
+                # Represent the Wireworld states using the accepted colours.
+                target_button = gui.grid_slaves(rx, cx + 1)[0]
+                target_button.state_change(state_future)
+
+    array_states = deepcopy(array_states_future)
 
 
 def advance_time():
     # All cells calculate their next state when time advances.
-    for b in list_buttons:
-        b.cycle_states()
+    cycle_states()
 
     # Update the time ticker and the GUI label accordingly.
     global time_ticker
@@ -227,10 +229,6 @@ def demo():
     # gui.after(2000)
     #
     # print("\n-- END --\n")
-
-
-def test_function():
-    gui.grid_slaves(3, 3)[0].configure(background="Green")
 
 
 if __name__ == '__main__':
