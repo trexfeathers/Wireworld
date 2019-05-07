@@ -8,6 +8,8 @@ import tkinter as tk
 from tkinter import filedialog
 from copy import deepcopy
 import yaml
+from yaml import scanner
+from yaml import parser
 import os.path
 
 default_array = [
@@ -24,8 +26,23 @@ valid_states = (0, 1, 2, 3)
 color_lookup = (None, "#0000ff", "#ff0000", "#ffff00")
 
 
+class TimeTicker:
+    def __init__(self):
+        self.ticks = 0
+
+    def reset(self):
+        self.ticks = 0
+        if 'gui' in globals():
+            gui.update_label()
+
+    def advance(self):
+        self.ticks += 1
+        if 'gui' in globals():
+            gui.update_label()
+
+
 class WireCell(tk.Button):
-    # WireCell is a tkinter button that handles the advancement of its Wireworld state and stores this in an array.
+    # WireCell is a tkinter button that represents the corresponding cell in array_states.
     # It is generated, along with the state array, by the load_array function.
     # Accepts positional coordinates and an initial state as arguments, as well as the standard master.
     def __init__(self, row_input, column_input, state=0, master=None):
@@ -33,7 +50,8 @@ class WireCell(tk.Button):
         self.master = master
 
         # Won't want to overwrite the position occupied by the time label.
-        base_column = master.time_label.grid_info()["column"] + 1
+        # base_column = master.time_label.grid_info()["column"] + 1
+        base_column = 1
 
         self.row, self.column = row_input, column_input
         self.grid(row=self.row, column=self.column + base_column)
@@ -47,7 +65,7 @@ class WireCell(tk.Button):
         self.configure(
             background=target_colour,
             activebackground=target_colour
-        )s
+        )
 
 
 class GUI(tk.Frame):
@@ -70,8 +88,7 @@ class GUI(tk.Frame):
 
     def update_label(self):
         # Get the latest time step and apply it to the time label's variable
-        global time_ticker
-        self.time_label_text.set(str(time_ticker))
+        self.time_label_text.set("Step: " + str(time_ticker.ticks))
 
     def create_buttons(self):
         self.advance_button = tk.Button(
@@ -83,36 +100,107 @@ class GUI(tk.Frame):
         self.save_button = tk.Button(
             master=self,
             text="Save",
-            command=lambda: self.save_file()
+            command=lambda: save_file()
+        )
+
+        self.load_button = tk.Button(
+            master=self,
+            text="Load",
+            command=lambda: load_file()
         )
 
         self.advance_button.grid(row=1, column=0)
         self.save_button.grid(row=3, column=0)
+        self.load_button.grid(row=4, column=0)
 
-    def save_file(self):
-        self.set_directory(is_save_mode=True)
-        save_yaml = yaml.dump(array_states)
+
+def set_directory(is_save_mode=True):
+    initial_directory = os.getcwd()
+    try:
+        if os.path.exists(tk_root.filename):
+            initial_directory = os.path.split(tk_root.filename)[0]
+    except AttributeError:
+        pass
+
+    config_dict = {
+        "initialdir": initial_directory,
+        "filetypes": (("yaml files", "*.yaml"), ("all files", "*.*"))
+    }
+
+    if is_save_mode:
+        tk_root.filename = filedialog.asksaveasfilename(**config_dict)
+    else:
+        tk_root.filename = filedialog.askopenfilename(**config_dict)
+
+
+def save_file():
+    set_directory(is_save_mode=True)
+    if tk_root.filename:
+        save_yaml = yaml.dump(array_states.tolist())
+        save_yaml = "\n".join((
+            "# this file should be YAML format containing a rectangular array of states (0-3) for use in Wireworld",
+            "# there should be no other YAML content"
+            "# e.g.",
+            "# - [0, 1, 2]",
+            "# - [1, 0, 1]",
+            "# - [3, 3, 3]",
+            "",
+            save_yaml
+        ))
+
+        save_path = tk_root.filename
+        if save_path[-5:] != ".yaml":
+            save_path += '.yaml'
 
         try:
-            f = open(tk_root.filename, "w+")
+            f = open(save_path, "w+")
         except OSError:
             print("Error accessing path, please try a different path")
 
-        if 'f' in locals():
+        if "f" in locals():
             f.write(save_yaml)
             f.close()
 
-    def set_directory(self, is_save_mode=True):
-        if os.path.exists(tk_root.filename):
-            initial_directory = os.path.split(tk_root.filename)[0]
-        else:
-            initial_directory = "/"
+        # if os.path.isfile(path):
+        #     check_overwrite = input("File already exists, overwrite? (y/n)")
+        # if check_overwrite == 'y':
+        #     try:
+        #         f = open(path, "w+")
+        #     except:
+        #         print("Error accessing path, please try a different path")
 
-        if is_save_mode:
-            tk_root.filename = filedialog.asksaveasfilename(initialdir=initial_directory)
-        else:
-            tk_root.filename = filedialog.askopenfilename(initialdir=initial_directory)
 
+def load_file():
+    set_directory(is_save_mode=False)
+    if tk_root.filename:
+        load_path = tk_root.filename
+
+        try:
+            f = open(load_path, "r")
+        except OSError:
+            print("Error accessing path, please try a different path")
+
+        if "f" in locals():
+            file_contents = f.read()
+            f.close()
+
+        array_input = format_yaml(file_contents)
+
+        if array_input is not None:
+            load_array(array_input)
+
+
+def format_yaml(yaml_input):
+
+    yaml_load = None
+
+    try:
+        yaml_load = yaml.load(yaml_input)
+    except (yaml.scanner.ScannerError, yaml.parser.ParserError) as exception_:
+        print("Invalid YAML format in config file, please try a different path \nError message: \n\n" +
+              str(exception_))
+
+    return yaml_load
 
 
 def array_format_check(array_input):
@@ -122,17 +210,17 @@ def array_format_check(array_input):
         format_ok = (np.array(array_input).ndim == 2)
     finally:
         if not format_ok:
-            raise Exception('Input array format error. Must be 2 dimensional array')
+            raise Exception("Input array format error. Must be 2 dimensional array")
 
 
 def load_array(array_input):
     array_format_check(array_input)
 
     # Several functions will need to work with the list of buttons and with the array of states.
-    global list_buttons
     global array_states
 
-    list_buttons = []
+    time_ticker.reset()
+
     array_states = np.array(deepcopy(array_input))
     # Iterate over the rows then the columns of the input array,
     # creating a new button in the appropriate GUI grid position.
@@ -141,9 +229,14 @@ def load_array(array_input):
             state = c
             if state not in valid_states:
                 state = 0
-
             new_cell = WireCell(master=gui, state=state, row_input=rx, column_input=cx)
-            list_buttons.append(new_cell)
+
+
+def advance_time():
+    # All cells calculate their next state when time advances.
+    cycle_states()
+    time_ticker.advance()
+    print_states()
 
 
 def cycle_states():
@@ -151,6 +244,7 @@ def cycle_states():
 
     global array_states
 
+    # Store an array of all future states before setting any of them.
     array_states_future = deepcopy(array_states)
     for rx, r in enumerate(array_states):
         for cx, c in enumerate(r):
@@ -179,18 +273,8 @@ def cycle_states():
                 target_button = gui.grid_slaves(rx, cx + 1)[0]
                 target_button.state_change(state_future)
 
+    # Finally update the main array of states.
     array_states = deepcopy(array_states_future)
-
-
-def advance_time():
-    # All cells calculate their next state when time advances.
-    cycle_states()
-
-    # Update the time ticker and the GUI label accordingly.
-    global time_ticker
-    time_ticker += 1
-    gui.update_label()
-    print_states()
 
 
 def print_states():
@@ -198,42 +282,19 @@ def print_states():
     array_print = deepcopy(array_states)
     array_print = np.where(array_print == 0, '-', array_print)
 
-    print("\n-- STEP " + str(time_ticker) + " --")
+    print("\n-- STEP " + str(time_ticker.ticks) + " --")
     print('\n'.join( [''.join( ['{:3}'.format(c) for c in r] ) for r in array_print] ))
 
 
-# def save_file(path):
-#     save_yaml = yaml.dump(array_states)
-#     if os.path.isfile(path):
-#         check_overwrite = input("File already exists, overwrite? (y/n)")
-#     if check_overwrite == 'y':
-#         try:
-#             f = open(path, "w+")
-#         except:
-#             print("Error accessing path, please try a different path")
-
-
 def demo():
-    # Displays the default array for a moment, advances time once, displays the result.
     load_array(default_array)
+    print_states()
     gui.mainloop()
-
-    # gui.update()
-    # gui.after(2000)
-    #
-    # advance_time()
-    # print("\n-- TIME ADVANCE --\n")
-    #
-    # print_states()
-    # gui.update()
-    # gui.after(2000)
-    #
-    # print("\n-- END --\n")
 
 
 if __name__ == '__main__':
     # Initiate the core architecture.
-    time_ticker = 0
+    time_ticker = TimeTicker()
     tk_root = tk.Tk()
     gui = GUI(master=tk_root)
 
