@@ -5,6 +5,7 @@ A python demonstration of Wireworld Cellular Automation (https://en.wikipedia.or
 
 import numpy as np
 import tkinter as tk
+from tkinter import filedialog
 from copy import deepcopy
 import yaml
 import os.path
@@ -85,6 +86,7 @@ class GUI(tk.Frame):
         self.pack()
 
         self.create_label()
+        self.create_buttons()
 
     def create_label(self):
         # Label to hold the current time step.
@@ -98,6 +100,56 @@ class GUI(tk.Frame):
         # Get the latest time step and apply it to the time label's variable
         global time_ticker
         self.time_label_text.set(str(time_ticker))
+
+    def create_buttons(self):
+        self.advance_button = tk.Button(
+            master=self,
+            text="Next",
+            command=lambda: advance_time()
+        )
+
+        self.save_button = tk.Button(
+            master=self,
+            text="Save",
+            command=lambda: self.save_file()
+        )
+
+        self.test_button = tk.Button(
+            master=self,
+            text="Test",
+            command=lambda: test_function()
+        )
+
+        self.advance_button.grid(row=1, column=0)
+        self.save_button.grid(row=3, column=0)
+        self.test_button.grid(row=5, column=0)
+
+
+
+    def save_file(self):
+        self.set_directory(is_save_mode=True)
+        save_yaml = yaml.dump(array_states)
+
+        try:
+            f = open(tk_root.filename, "w+")
+        except OSError:
+            print("Error accessing path, please try a different path")
+
+        if 'f' in locals():
+            f.write(save_yaml)
+            f.close()
+
+    def set_directory(self, is_save_mode=True):
+        if os.path.exists(tk_root.filename):
+            initial_directory = os.path.split(tk_root.filename)[0]
+        else:
+            initial_directory = "/"
+
+        if is_save_mode:
+            tk_root.filename = filedialog.asksaveasfilename(initialdir=initial_directory)
+        else:
+            tk_root.filename = filedialog.askopenfilename(initialdir=initial_directory)
+
 
 
 def array_format_check(array_input):
@@ -136,6 +188,7 @@ def advance_time():
     global time_ticker
     time_ticker += 1
     gui.update_label()
+    print_states()
 
 
 def print_states():
@@ -143,36 +196,41 @@ def print_states():
     array_print = deepcopy(array_states)
     array_print = np.where(array_print == 0, '-', array_print)
 
+    print("\n-- STEP " + str(time_ticker) + " --")
     print('\n'.join( [''.join( ['{:3}'.format(c) for c in r] ) for r in array_print] ))
 
 
-def save_file(path):
-    save_yaml = yaml.dump(array_states)
-    if os.path.isfile(path):
-        check_overwrite = input("File already exists, overwrite? (y/n)")
-    if check_overwrite == 'y':
-        try:
-            f = open(path, "w+")
-        except:
-            print("Error accessing path, please try a different path")
+# def save_file(path):
+#     save_yaml = yaml.dump(array_states)
+#     if os.path.isfile(path):
+#         check_overwrite = input("File already exists, overwrite? (y/n)")
+#     if check_overwrite == 'y':
+#         try:
+#             f = open(path, "w+")
+#         except:
+#             print("Error accessing path, please try a different path")
 
 
 def demo():
     # Displays the default array for a moment, advances time once, displays the result.
     load_array(default_array)
-    print("\n-- START --\n")
-    print_states()
-    gui.update()
-    gui.after(2000)
+    gui.mainloop()
 
-    advance_time()
-    print("\n-- TIME ADVANCE --\n")
+    # gui.update()
+    # gui.after(2000)
+    #
+    # advance_time()
+    # print("\n-- TIME ADVANCE --\n")
+    #
+    # print_states()
+    # gui.update()
+    # gui.after(2000)
+    #
+    # print("\n-- END --\n")
 
-    print_states()
-    gui.update()
-    gui.after(2000)
 
-    print("\n-- END --\n")
+def test_function():
+    gui.grid_slaves(3, 3)[0].configure(background="Green")
 
 
 if __name__ == '__main__':
@@ -185,4 +243,7 @@ if __name__ == '__main__':
         demo()
     finally:
         # Close down the GUI no matter what.
-        tk_root.destroy()
+        try:
+            tk_root.destroy()
+        except tk.TclError:
+            pass
