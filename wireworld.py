@@ -27,18 +27,13 @@ color_lookup = (None, "#0000ff", "#ff0000", "#ffff00")
 
 
 class TimeTicker:
+    def __setattr__(self, name, value):
+        self.__dict__[name] = value
+        if name == "ticks" and "gui" in globals():
+            gui.update_label()
+
     def __init__(self):
         self.ticks = 0
-
-    def reset(self):
-        self.ticks = 0
-        if 'gui' in globals():
-            gui.update_label()
-
-    def advance(self):
-        self.ticks += 1
-        if 'gui' in globals():
-            gui.update_label()
 
 
 class WireCell(tk.Button):
@@ -88,7 +83,7 @@ class GUI(tk.Frame):
 
     def update_label(self):
         # Get the latest time step and apply it to the time label's variable
-        self.time_label_text.set("Step: " + str(time_ticker.ticks))
+        self.time_label_text.set("{:05d}".format(time_ticker.ticks))
 
     def create_buttons(self):
         self.advance_button = tk.Button(
@@ -119,7 +114,7 @@ def set_directory(is_save_mode=True):
     try:
         if os.path.exists(tk_root.filename):
             initial_directory = os.path.split(tk_root.filename)[0]
-    except AttributeError:
+    except (AttributeError, TypeError):
         pass
 
     config_dict = {
@@ -219,7 +214,7 @@ def load_array(array_input):
     # Several functions will need to work with the list of buttons and with the array of states.
     global array_states
 
-    time_ticker.reset()
+    time_ticker.ticks = 0
 
     array_states = np.array(deepcopy(array_input))
     # Iterate over the rows then the columns of the input array,
@@ -235,7 +230,7 @@ def load_array(array_input):
 def advance_time():
     # All cells calculate their next state when time advances.
     cycle_states()
-    time_ticker.advance()
+    time_ticker.ticks += 1
     print_states()
 
 
