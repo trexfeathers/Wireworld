@@ -4,13 +4,14 @@ A python demonstration of Wireworld Cellular Automation (https://en.wikipedia.or
 """
 
 import numpy as np
+import os
 import tkinter as tk
-from tkinter import filedialog
-from copy import deepcopy
 import yaml
-from yaml import scanner
+
+from copy import deepcopy
+from tkinter import filedialog
 from yaml import parser
-import os.path
+from yaml import scanner
 
 default_array = [
     [0, 0, 0, 3, 0, 0, 0],
@@ -27,10 +28,12 @@ color_lookup = (None, "#0000ff", "#ff0000", "#ffff00")
 
 
 class TimeTicker:
+    # Simple class containing the 'ticks' property.
+    # When ticks changes value, the gui label is updated to reflect this.
     def __setattr__(self, name, value):
         self.__dict__[name] = value
         if name == "ticks" and "gui" in globals():
-            gui.update_label()
+            gui.update_time_label(self.ticks)
 
     def __init__(self):
         self.ticks = 0
@@ -50,7 +53,9 @@ class WireCell(tk.Button):
 
         self.row, self.column = row_input, column_input
         self.grid(row=self.row, column=self.column + base_column)
-        self.state_change(state)
+
+        self.state = state
+        self.state_change(self.state)
 
     def state_change(self, state):
         self.state = state
@@ -70,22 +75,13 @@ class GUI(tk.Frame):
         self.master = master
         self.pack()
 
-        self.create_label()
-        self.create_buttons()
-
-    def create_label(self):
-        # Label to hold the current time step.
+        # tk.StringVar() allows time_label_text to be updated at later points
         self.time_label_text = tk.StringVar()
-        self.time_label = tk.Label(master=self, textvariable=self.time_label_text)
-        self.time_label.grid(row=0, column=0)
+        self.time_label = tk.Label(
+            master=self,
+            textvariable=self.time_label_text
+        )
 
-        self.update_label()
-
-    def update_label(self):
-        # Get the latest time step and apply it to the time label's variable
-        self.time_label_text.set("{:05d}".format(time_ticker.ticks))
-
-    def create_buttons(self):
         self.advance_button = tk.Button(
             master=self,
             text="Next",
@@ -104,12 +100,22 @@ class GUI(tk.Frame):
             command=lambda: load_file()
         )
 
+        self.time_label.grid(row=0, column=0)
         self.advance_button.grid(row=1, column=0)
         self.save_button.grid(row=3, column=0)
         self.load_button.grid(row=4, column=0)
 
+        self.update_time_label(0)
+
+    def update_time_label(self, ticks):
+        # Change the time label variable to an input integer
+        self.time_label_text.set("{:05d}".format(ticks))
+
 
 def set_directory(is_save_mode=True):
+    # Used during both save and load functions to get the target path from the user via a file dialog.
+
+    # Try to use a previously set path as the dialog's starting point. If not possible use the working directory.
     initial_directory = os.getcwd()
     try:
         if os.path.exists(tk_root.filename):
@@ -117,6 +123,7 @@ def set_directory(is_save_mode=True):
     except (AttributeError, TypeError):
         pass
 
+    # Config for save or load is the same so use kwargs.
     config_dict = {
         "initialdir": initial_directory,
         "filetypes": (("yaml files", "*.yaml"), ("all files", "*.*"))
@@ -129,9 +136,11 @@ def set_directory(is_save_mode=True):
 
 
 def save_file():
+    # Save the contents of array_states to a YAML file using the path selected by the user.
     set_directory(is_save_mode=True)
-    if tk_root.filename:
+    if tk_root.filename:    # only run if tk_root.filename is populated
         save_yaml = yaml.dump(array_states.tolist())
+        # Include a comment section at the top of the file to instruct any direct editing of the file.
         save_yaml = "\n".join((
             "# this file should be YAML format containing a rectangular array of states (0-3) for use in Wireworld",
             "# there should be no other YAML content"
@@ -143,10 +152,12 @@ def save_file():
             save_yaml
         ))
 
+        # Add the .yaml suffix if not present.
         save_path = tk_root.filename
         if save_path[-5:] != ".yaml":
             save_path += '.yaml'
 
+        # Attempt to access the path provided.
         try:
             f = open(save_path, "w+")
         except OSError:
@@ -156,20 +167,14 @@ def save_file():
             f.write(save_yaml)
             f.close()
 
-        # if os.path.isfile(path):
-        #     check_overwrite = input("File already exists, overwrite? (y/n)")
-        # if check_overwrite == 'y':
-        #     try:
-        #         f = open(path, "w+")
-        #     except:
-        #         print("Error accessing path, please try a different path")
-
 
 def load_file():
+    # Load contents of a YAML file using the path selected by the user.
     set_directory(is_save_mode=False)
-    if tk_root.filename:
+    if tk_root.filename:    # only run if tk_root.filename is populated
         load_path = tk_root.filename
 
+        # Attempt to access the path provided.
         try:
             f = open(load_path, "r")
         except OSError:
@@ -179,21 +184,24 @@ def load_file():
             file_contents = f.read()
             f.close()
 
-        array_input = format_yaml(file_contents)
+        # Attempt to interpret file contents as YAML content.
+        if "file_contents" in locals():
+            array_input = format_yaml(file_contents)
 
-        if array_input is not None:
+        # Continue processing if YAML content has been extracted.
+        if "array_input" in locals():
             load_array(array_input)
 
 
 def format_yaml(yaml_input):
-
+    # Attempt to an input variable as YAML content.
     yaml_load = None
 
     try:
         yaml_load = yaml.load(yaml_input)
-    except (yaml.scanner.ScannerError, yaml.parser.ParserError) as exception_:
+    except (yaml.scanner.ScannerError, yaml.parser.ParserError) as exception:
         print("Invalid YAML format in config file, please try a different path \nError message: \n\n" +
-              str(exception_))
+              str(exception))
 
     return yaml_load
 
@@ -272,13 +280,13 @@ def cycle_states():
     array_states = deepcopy(array_states_future)
 
 
-def print_states():
+def print_states(array_input):
     # Print a readable format of the state array in the terminal. Format empty cells as hyphens.
-    array_print = deepcopy(array_states)
-    array_print = np.where(array_print == 0, '-', array_print)
-
-    print("\n-- STEP " + str(time_ticker.ticks) + " --")
-    print('\n'.join( [''.join( ['{:3}'.format(c) for c in r] ) for r in array_print] ))
+    # array_print = deepcopy(array_states)
+    if type(array_input) is np.ndarray:
+        array_input = np.where(array_input == 0, '-', array_input)
+        print("\n-- STEP " + str(time_ticker.ticks) + " --")
+        print('\n'.join( [''.join( ['{:3}'.format(c) for c in r] ) for r in array_input] ))
 
 
 def demo():
