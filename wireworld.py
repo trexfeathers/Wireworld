@@ -33,8 +33,10 @@ class WireWorldInstance:
     def __init__(self):
         # Initialise the basic architecture.
         self.tk_root = tk.Tk()
-        self.gui = self.GUI(master=self.tk_root, wireworld_parent=self)
-        self.time_ticker = self.TimeTicker(wireworld_parent=self)
+        self.gui_controls = self.GuiControls(master=self.tk_root, wireworld_parent=self)
+        self.tk_root.title("Wireworld Controls")
+
+        self.reset_wireworld()
 
     ####################################################################################################################
     # WireWorldInstance classes
@@ -45,59 +47,92 @@ class WireWorldInstance:
         def __init__(self, wireworld_parent):
             # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
             enforce_type_wireworld(wireworld_parent)
-            if "gui" in wireworld_parent.__dict__:
-                self.gui = wireworld_parent.gui
+            if "gui_controls" in wireworld_parent.__dict__:
+                self.gui_controls = wireworld_parent.gui_controls
             self.ticks = 0
 
         def __setattr__(self, name, value):
             self.__dict__[name] = value
-            if name == "ticks" and "gui" in self.__dict__:
-                self.gui.update_time_label(self.ticks)
+            if name == "ticks" and "gui_controls" in self.__dict__:
+                self.gui_controls.update_time_label(self.ticks)
 
-    class GUI(tk.Frame):
-        # The container for all tkinter widgets including the grid of wireworld cells.
+    class GuiControls(tk.Frame):
+        # The container for tkinter widgets controlling the wireworld instance.
         def __init__(self, master, wireworld_parent):
             # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
             enforce_type_wireworld(wireworld_parent)
+            self.wireworld_parent = wireworld_parent
             super().__init__(master)
             self.master = master
-            self.pack()
 
             # tk.StringVar() allows time_label_text to be updated at later points
             self.time_label_text = tk.StringVar()
             self.time_label = tk.Label(
                 master=self,
-                textvariable=self.time_label_text
+                textvariable=self.time_label_text,
             )
 
             self.advance_button = tk.Button(
                 master=self,
-                text="Next",
-                command=lambda: wireworld_parent.advance_time()
+                text="Next Time Step",
+                command=lambda: wireworld_parent.advance_time(),
             )
 
             self.save_button = tk.Button(
                 master=self,
-                text="Save",
+                text="Save States",
                 command=lambda: wireworld_parent.save_load_states(is_save_mode=True)
             )
 
             self.load_button = tk.Button(
                 master=self,
-                text="Load",
+                text="Load States",
                 command=lambda: wireworld_parent.save_load_states(is_save_mode=False)
             )
 
-            self.time_label.grid(row=0, column=0)
-            self.advance_button.grid(row=1, column=0)
-            self.save_button.grid(row=3, column=0)
-            self.load_button.grid(row=4, column=0)
+            self.default_button = tk.Button(
+                master=self,
+                text="Default States",
+                command=lambda: wireworld_parent.parse_array(array_default)
+            )
+
+            self.spacer = tk.Label(master=self, text=" ")
+
+            self.time_label.grid(row=0, column=0, sticky="we")
+            self.advance_button.grid(row=1, column=0, sticky="we")
+            self.spacer.grid(row=2, column=0, sticky="we")
+            self.save_button.grid(row=3, column=0, sticky="we")
+            self.load_button.grid(row=4, column=0, sticky="we")
+            self.default_button.grid(row=5, column=0, sticky="we")
 
             self.update_time_label(0)
 
+            self.toggle_interaction_controls(is_enable_mode=False)
+
+            self.pack()
+
         def update_time_label(self, ticks):
-            # Change the time label variable to an integer provided
+            # Change the time label variable to an integer provided.
             self.time_label_text.set("{:05d}".format(ticks))
+
+        def toggle_interaction_controls(self, is_enable_mode: bool):
+            # Enable/disable any buttons that interact with an existing wireworld - only enable when one exists.
+            toggleable = (
+                self.time_label,
+                self.advance_button,
+                self.save_button
+            )
+
+            state_toggle = "normal" if is_enable_mode else "disable"
+            for control in toggleable:
+                control.configure(state=state_toggle)
+
+    class GuiGrid(tk.Frame):
+        # The container for tkinter widgets displaying the wireworld instance.
+        def __init__(self, master):
+            super().__init__(master)
+            self.master = master
+            self.pack()
 
     class WireCell(tk.Button):
         # WireCell is a tkinter button that represents the corresponding cell in array_states.
@@ -107,12 +142,8 @@ class WireWorldInstance:
             super().__init__(master)
             self.master = master
 
-            # Won't want to overwrite the position occupied by the time label.
-            # base_column = master.time_label.grid_info()["column"] + 1
-            base_column = 1
-
             self.row, self.column = row_input, column_input
-            self.grid(row=self.row, column=self.column + base_column)
+            self.grid(row=self.row, column=self.column)
 
             self.state = state
 
@@ -138,9 +169,9 @@ class WireWorldInstance:
     def execute(self):
         # The basic behaviour of a wireworld instance.
         try:
-            self.parse_array(array_default)
-            print_states(self.array_states, self.time_ticker.ticks)
-            self.gui.mainloop()
+            # self.parse_array(array_default)
+            # print_states(self.array_states, self.time_ticker.ticks)
+            self.tk_root.mainloop()
         finally:
             # Close down the GUI no matter what.
             try:
@@ -184,7 +215,8 @@ class WireWorldInstance:
 
         array_input = cleanse_array(array_input)
 
-        self.time_ticker.ticks = 0
+        self.reset_wireworld()
+        self.create_grid_window()
 
         self.array_states = np.array(deepcopy(array_input))
         # Iterate over the rows then the columns of the input array,
@@ -192,7 +224,45 @@ class WireWorldInstance:
         for rx, r in enumerate(array_input):
             for cx, c in enumerate(r):
                 state = c
-                self.WireCell(master=self.gui, state=state, row_input=rx, column_input=cx)
+                self.WireCell(master=self.gui_grid, state=state, row_input=rx, column_input=cx)
+
+        print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
+
+    def create_grid_window(self):
+        # Create and position a new GUI window independent of the controls window.
+
+        def parse_tk_geometry(geometry_input):
+            # Convert tk's specific geometry string into a 4 item list
+            geometry_list = geometry_input.split('+')
+            geometry_dimensions = geometry_list[0].split('x')
+            geometry_position = geometry_list[1:3]
+            geometry_parsed = geometry_dimensions + geometry_position
+            geometry_parsed = [int(i) for i in geometry_parsed]
+            return geometry_parsed
+
+        # Initiate or re-initiate the window that will contain the wireworld grid.
+        if "window_grid" in self.__dict__:
+            self.window_grid.destroy()
+        self.window_grid = tk.Toplevel(self.tk_root)
+        self.window_grid.title("Wireworld Grid")
+
+        # Initiate or re-initiate the frame that will contain the wireworld grid.
+        if "gui_grid" in self.__dict__:
+            self.gui_grid.destroy()
+        self.gui_grid = self.GuiGrid(master=self.window_grid)
+
+        # Position the grid window to the right of the control window.
+        geometry_controls = parse_tk_geometry(self.tk_root.geometry())
+        geometry_grid = parse_tk_geometry(self.window_grid.geometry())
+        geometry_grid[3] = geometry_controls[3]
+        geometry_grid[2] = geometry_controls[2] + geometry_controls[0] + 20
+        self.window_grid.geometry('+%d+%d' % tuple(geometry_grid[2:4]))
+
+        # Enable relevant gui controls now the grid has been created
+        self.gui_controls.toggle_interaction_controls(is_enable_mode=True)
+
+        # Set to re-disable relevant gui controls when the grid is closed
+        self.window_grid.protocol("WM_DELETE_WINDOW", self.grid_on_closing)
 
     def advance_time(self):
         # Advance the wireworld instance to the next time step.
@@ -201,12 +271,23 @@ class WireWorldInstance:
 
         for rx, cx in changed_coords:
             # changed_coords provides a list, which is used to identify each button that needs updating.
-            target_button = self.gui.grid_slaves(rx, cx + 1)[0]
+            target_button = self.gui_grid.grid_slaves(rx, cx)[0]
             target_button.state = self.array_states[rx][cx]
 
         self.time_ticker.ticks += 1
         # Terminal output of states.
-        print_states(self.array_states, self.time_ticker.ticks)
+        print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
+
+    def grid_on_closing(self):
+        # Run when a grid window is closed.
+        self.reset_wireworld()
+        self.gui_controls.toggle_interaction_controls(is_enable_mode=False)
+        self.window_grid.destroy()
+
+    def reset_wireworld(self):
+        # New time ticker, new state array.
+        self.time_ticker = self.TimeTicker(wireworld_parent=self)
+        self.array_states = np.array([[0]])     # single empty cell
 
 ########################################################################################################################
 # independent functions
