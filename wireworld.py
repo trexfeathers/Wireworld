@@ -5,6 +5,7 @@ A python demonstration of Wireworld Cellular Automation (https://en.wikipedia.or
 
 import numpy as np
 import os
+import time
 import tkinter as tk
 import yaml
 
@@ -31,12 +32,21 @@ class WireWorldInstance:
     # A class containing any classes and non-independent methods needed to run a wireworld instance.
 
     def __init__(self):
+        self.keep_playing = False
+
         # Initialise the basic architecture.
         self.tk_root = tk.Tk()
         self.gui_controls = self.GuiControls(master=self.tk_root, wireworld_parent=self)
         self.tk_root.title("Wireworld Controls")
 
-        self.reset_wireworld()
+        self.wipe_wireworld()
+
+    def __setattr__(self, name, value):
+        # keep_playing signals wireworld to continuously advance time steps,
+        # whenever the value changes, the gui is put into 'playback mode' or 'pause mode' using toggle_play_button.
+        self.__dict__[name] = value
+        if name == "keep_playing" and "gui_controls" in self.__dict__:
+            self.gui_controls.toggle_play_button(not value)
 
     ####################################################################################################################
     # WireWorldInstance classes
@@ -65,67 +75,110 @@ class WireWorldInstance:
             super().__init__(master)
             self.master = master
 
+            # Used as kwargs when initiating every widget.
+            button_standards = {
+                "master": self,
+                "width": 15
+            }
+
             # tk.StringVar() allows time_label_text to be updated at later points
             self.time_label_text = tk.StringVar()
             self.time_label = tk.Label(
-                master=self,
                 textvariable=self.time_label_text,
+                **button_standards
             )
 
             self.advance_button = tk.Button(
-                master=self,
                 text="Next Time Step",
-                command=lambda: wireworld_parent.advance_time(),
+                command=lambda: self.wireworld_parent.advance_step(),
+                **button_standards
             )
 
             self.save_button = tk.Button(
-                master=self,
                 text="Save States",
-                command=lambda: wireworld_parent.save_load_states(is_save_mode=True)
+                command=lambda: self.wireworld_parent.save_load_states(is_save_mode=True),
+                **button_standards
             )
 
             self.load_button = tk.Button(
-                master=self,
                 text="Load States",
-                command=lambda: wireworld_parent.save_load_states(is_save_mode=False)
+                command=lambda: self.wireworld_parent.save_load_states(is_save_mode=False),
+                **button_standards
             )
 
             self.default_button = tk.Button(
-                master=self,
                 text="Default States",
-                command=lambda: wireworld_parent.parse_array(array_default)
+                command=lambda: self.wireworld_parent.parse_array(array_default),
+                **button_standards
             )
 
-            self.spacer = tk.Label(master=self, text=" ")
+            self.play_button = tk.Button(**button_standards)
 
-            self.time_label.grid(row=0, column=0, sticky="we")
-            self.advance_button.grid(row=1, column=0, sticky="we")
-            self.spacer.grid(row=2, column=0, sticky="we")
-            self.save_button.grid(row=3, column=0, sticky="we")
-            self.load_button.grid(row=4, column=0, sticky="we")
-            self.default_button.grid(row=5, column=0, sticky="we")
+            self.reset_button = tk.Button(
+                text="Reset to Step 0",
+                command=lambda: self.wireworld_parent.reset_to_original(),
+                **button_standards
+            )
 
+            # self.spacer = tk.Label(master=self, text=" ")
+            # self.spacer.grid(row=2, column=0, sticky="we")
+
+            self.save_button.grid(column=0, row=1)
+            self.load_button.grid(column=0, row=2)
+            self.default_button.grid(column=0, row=3)
+
+            self.time_label.grid(column=1, row=0)
+            self.advance_button.grid(column=1, row=1)
+            self.play_button.grid(column=1, row=2)
+            self.reset_button.grid(column=1, row=3)
+
+            # Set various widgets to their default states before any wireworld grid has been loaded.
             self.update_time_label(0)
-
+            self.toggle_play_button(set_to_play=True)
             self.toggle_interaction_controls(is_enable_mode=False)
 
             self.pack()
 
-        def update_time_label(self, ticks):
+        def update_time_label(self, ticks: int):
             # Change the time label variable to an integer provided.
             self.time_label_text.set("{:05d}".format(ticks))
 
         def toggle_interaction_controls(self, is_enable_mode: bool):
-            # Enable/disable any buttons that interact with an existing wireworld - only enable when one exists.
+            # Enable/disable any widgets that relate to an existing wireworld - only enable when one exists.
+            # This method is used during initial setup, whenever an array is parsed, and whenever the grid is closed.
             toggleable = (
                 self.time_label,
                 self.advance_button,
-                self.save_button
+                self.save_button,
+                self.play_button,
+                self.reset_button
             )
 
-            state_toggle = "normal" if is_enable_mode else "disable"
-            for control in toggleable:
-                control.configure(state=state_toggle)
+            toggle_tk_widget(is_enable_mode=is_enable_mode, toggle_tuple=toggleable)
+
+        def toggle_play_button(self, set_to_play: bool):
+            # During playback, the only possible action is to pause the playback.
+            # When paused, all other actions are re-enabled.
+
+            # Enable/disable all widgets other than the play/pause button and the time step indicator.
+            control_list = self.winfo_children()
+            for i in [self.play_button, self.time_label]:
+                control_list.remove(i)
+
+            toggle_tk_widget(is_enable_mode=set_to_play, toggle_tuple=tuple(control_list))
+
+            # Change the text and function of the play/pause button depending on the current playback state.
+            if set_to_play:
+                text_var = "Play Time Steps"
+                command_var = lambda: (self.wireworld_parent.continuous_play_start())
+            else:
+                text_var = "Pause Playback"
+                command_var = lambda: (self.wireworld_parent.continuous_play_pause())
+
+            self.play_button.configure(
+                text=text_var,
+                command=command_var
+            )
 
     class GuiGrid(tk.Frame):
         # The container for tkinter widgets displaying the wireworld instance.
@@ -215,10 +268,11 @@ class WireWorldInstance:
 
         array_input = cleanse_array(array_input)
 
-        self.reset_wireworld()
+        self.wipe_wireworld()
         self.create_grid_window()
 
         self.array_states = np.array(deepcopy(array_input))
+        self.array_states_original = deepcopy(self.array_states)
         # Iterate over the rows then the columns of the input array,
         # creating a new button in the appropriate GUI grid position.
         for rx, r in enumerate(array_input):
@@ -231,10 +285,10 @@ class WireWorldInstance:
     def create_grid_window(self):
         # Create and position a new GUI window independent of the controls window.
 
-        def parse_tk_geometry(geometry_input):
+        def parse_tk_geometry(geometry_input: str):
             # Convert tk's specific geometry string into a 4 item list
-            geometry_list = geometry_input.split('+')
-            geometry_dimensions = geometry_list[0].split('x')
+            geometry_list = geometry_input.split("+")
+            geometry_dimensions = geometry_list[0].split("x")
             geometry_position = geometry_list[1:3]
             geometry_parsed = geometry_dimensions + geometry_position
             geometry_parsed = [int(i) for i in geometry_parsed]
@@ -256,7 +310,7 @@ class WireWorldInstance:
         geometry_grid = parse_tk_geometry(self.window_grid.geometry())
         geometry_grid[3] = geometry_controls[3]
         geometry_grid[2] = geometry_controls[2] + geometry_controls[0] + 20
-        self.window_grid.geometry('+%d+%d' % tuple(geometry_grid[2:4]))
+        self.window_grid.geometry("+%d+%d" % tuple(geometry_grid[2:4]))
 
         # Enable relevant gui controls now the grid has been created
         self.gui_controls.toggle_interaction_controls(is_enable_mode=True)
@@ -264,7 +318,7 @@ class WireWorldInstance:
         # Set to re-disable relevant gui controls when the grid is closed
         self.window_grid.protocol("WM_DELETE_WINDOW", self.grid_on_closing)
 
-    def advance_time(self):
+    def advance_step(self):
         # Advance the wireworld instance to the next time step.
 
         self.array_states, changed_coords = cycle_states(self.array_states)
@@ -278,28 +332,53 @@ class WireWorldInstance:
         # Terminal output of states.
         print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
 
+    def continuous_play_start(self):
+        # Advance wireworld to the next time step every 0.5 seconds.
+        self.keep_playing = True
+        time_base = time.time()
+
+        while self.keep_playing:
+            # The tk elements are updated continuously during playback.
+            self.tk_root.update()
+            if time.time() - time_base > 0.5:
+                # Reset time_base for future comparisons.
+                time_base = time.time()
+                self.advance_step()
+
+    def continuous_play_pause(self):
+        # Halts the loop within continuous_play_start if it is running.
+        self.keep_playing = False
+
     def grid_on_closing(self):
         # Run when a grid window is closed.
-        self.reset_wireworld()
-        self.gui_controls.toggle_interaction_controls(is_enable_mode=False)
-        self.window_grid.destroy()
+        self.wipe_wireworld()
+        if "gui_controls" in self.__dict__:
+            self.gui_controls.toggle_interaction_controls(is_enable_mode=False)
+        if "window_grid" in self.__dict__:
+            self.window_grid.destroy()
 
-    def reset_wireworld(self):
+    def wipe_wireworld(self):
         # New time ticker, new state array.
         self.time_ticker = self.TimeTicker(wireworld_parent=self)
         self.array_states = np.array([[0]])     # single empty cell
+
+    def reset_to_original(self):
+        # array_states_original is recorded from the initial array_states when parse_array is run.
+        # This allows the user to return to the states of time step 0.
+        if "array_states_original" in self.__dict__:
+            self.parse_array(self.array_states_original)
 
 ########################################################################################################################
 # independent functions
 
 
-def enforce_type_wireworld(input_class):
+def enforce_type_wireworld(input_class: WireWorldInstance):
     # Used by several classes to make sure they have been provided with a reference to a parent WireWorldInstance.
     if not isinstance(input_class, WireWorldInstance):
         raise Exception("class type check failed = must be type WireWorldInstance")
 
 
-def save_file(path_input, array_input):
+def save_file(path_input: str, array_input):
     # Save the contents of array_states to a YAML file using the path selected by the user.
 
     # Only necessary if function is called outside a WireWorldInstance class
@@ -311,7 +390,7 @@ def save_file(path_input, array_input):
     # Include a comment section at the top of the file to instruct any direct editing of the file.
     yaml_save = "\n".join((
         "# this file should be YAML format containing a rectangular array of states (0-3) for use in Wireworld",
-        "# there should be no other YAML content"
+        "# there should be no other YAML content",
         "# e.g.",
         "# - [0, 1, 2]",
         "# - [1, 0, 1]",
@@ -322,7 +401,7 @@ def save_file(path_input, array_input):
 
     # Add the .yaml suffix if not present.
     if path_input[-5:] != ".yaml":
-        path_input += '.yaml'
+        path_input += ".yaml"
 
     # Attempt to access the path provided.
     try:
@@ -335,7 +414,7 @@ def save_file(path_input, array_input):
         f.close()
 
 
-def load_file(input_path):
+def load_file(input_path: str):
     # Load contents of a YAML file using the path selected by the user.
 
     # Attempt to access the path provided.
@@ -357,7 +436,7 @@ def load_file(input_path):
         return None
 
 
-def format_yaml(string_input):
+def format_yaml(string_input: str):
     # Attempt to an input variable as YAML content.
     yaml_content = None
 
@@ -393,7 +472,7 @@ def cleanse_array(array_input):
     return array_input
 
 
-def cycle_states(array_input):
+def cycle_states(array_input: np.ndarray):
     # Check the cell's own state and its surroundings to provide the next state in line with Wireworld rules.
 
     array_input = cleanse_array(array_input)
@@ -429,16 +508,27 @@ def cycle_states(array_input):
     return array_future, changed_coords
 
 
-def print_states(array_input, ticks):
+def print_states(array_input: np.ndarray, ticks: int):
     # Print a readable format of the state array in the terminal. Format empty cells as hyphens.
     if type(array_input) is np.ndarray:
-        array_input = np.where(array_input == 0, '-', array_input)
+        array_input = np.where(array_input == 0, "-", array_input)
         print("\n-- STEP " + str(ticks) + " --")
-        print('\n'.join( [''.join( ['{:3}'.format(c) for c in r] ) for r in array_input] ))
+        print("\n".join( [''.join( ["{:3}".format(c) for c in r] ) for r in array_input] ))
+
+
+def toggle_tk_widget(is_enable_mode: bool, toggle_tuple: tuple):
+    # Generic function to enable/disable any tkinter widget that is listed in the tuple.
+    state_toggle = "normal" if is_enable_mode else "disable"
+    for control in toggle_tuple:
+        # try/except avoids issues if the user inputs other objects in the tuple.
+        try:
+            control.configure(state=state_toggle)
+        except AttributeError:
+            pass
 
 ########################################################################################################################
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     W1 = WireWorldInstance()
     W1.execute()
