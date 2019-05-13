@@ -10,6 +10,8 @@ import tkinter as tk
 import yaml
 
 from copy import deepcopy
+from scipy import misc as smp
+from PIL import Image
 from tkinter import filedialog
 from yaml import parser
 from yaml import scanner
@@ -26,6 +28,16 @@ array_default = [
 
 valid_states = (0, 1, 2, 3)
 color_lookup = ("#d9d9d9", "#0000ff", "#ff0000", "#ffff00")
+
+
+def rgb_from_hex(hex_colour):
+    try:
+        return list(int(hex_colour[i:i + 2], 16) for i in (1, 3, 5))
+    except ValueError:
+        raise Exception("Invalid hex colour provided. Example format: #ff00ff")
+
+
+color_lookup_rgb = [rgb_from_hex(i) for i in color_lookup]
 
 
 class WireWorldInstance:
@@ -47,6 +59,10 @@ class WireWorldInstance:
         self.__dict__[name] = value
         if name == "keep_playing" and "gui_controls" in self.__dict__:
             self.gui_controls.toggle_play_button(not value)
+        elif name == "array_states":
+            pass
+        else:
+            pass
 
     ####################################################################################################################
     # WireWorldInstance classes
@@ -195,6 +211,19 @@ class WireWorldInstance:
             self.blank_image = tk.PhotoImage()
             self.pack()
 
+    class GuiMap(tk.Canvas):
+        def __init__(self, master, wireworld_parent):
+            # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
+            enforce_type_wireworld(wireworld_parent)
+            self.wireworld_parent = wireworld_parent
+
+            super().__init__(master)
+            self.master = master
+            self.image = Image.fromarray(self.wireworld_parent.array_states)
+            self.photo = tk.PhotoImage
+            self.pack(side="top", fill="both", expand="yes")
+            self.create_image(10, 10, image=self.photo, anchor="nw")
+
     class WireCell(tk.Button):
         # WireCell is a tkinter button that represents the corresponding cell in array_states.
         # It is generated, along with the state array, by the parse_array function.
@@ -316,7 +345,12 @@ class WireWorldInstance:
                     column_input=cx
                 )
 
+        self.img, self.array_pixels = pixels_from_array(self.array_states)
         print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
+
+
+        # img = smp.toimage(self.array_states)
+        # img.show()
 
     def create_grid_window(self):
         # Create and position a new GUI window independent of the controls window.
@@ -361,8 +395,13 @@ class WireWorldInstance:
 
         for rx, cx in changed_coords:
             # changed_coords provides a list, which is used to identify each button that needs updating.
+            state = self.array_states[rx][cx]
+
             target_button = self.gui_grid.grid_slaves(rx, cx)[0]
-            target_button.state = self.array_states[rx][cx]
+            target_button.state = state
+
+            # for ix, rgb_element in enumerate(color_lookup_rgb[state]):
+            self.array_pixels[rx, cx] = color_lookup_rgb[state]
 
         self.time_ticker.ticks += 1
         # Terminal output of states.
@@ -397,6 +436,7 @@ class WireWorldInstance:
         # New time ticker, new state array.
         self.time_ticker = self.TimeTicker(wireworld_parent=self)
         self.array_states = np.array([[0]])     # single empty cell
+        self.array_pixels = pixels_from_array(self.array_states)
 
     def reset_to_original(self):
         # array_states_original is recorded from the initial array_states when parse_array is run.
@@ -542,6 +582,32 @@ def cycle_states(array_input: np.ndarray):
                 changed_coords.append([rx, cx])
 
     return array_future, changed_coords
+
+
+def pixels_from_array(array_input: np.ndarray):
+    array_input = cleanse_array(array_input)
+
+    # array_pixels = [[()]]
+
+    # array_pixels = np.repeat(np.repeat(array_input, 3, 0), 3, 1)
+    # array_pixels = deepcopy(array_input)
+    # array_pixels = np.expand_dims(array_pixels, axis=1)
+    array_colours = np.empty(np.shape(array_input) + (3,), dtype=np.uint8)
+    for rx, r in enumerate(array_input):
+        for cx, c in enumerate(r):
+            state = c
+            array_colours[rx][cx] = color_lookup_rgb[state]
+            # state = c
+            # row_lower = rx * 3
+            # row_upper = (rx + 1) * 3
+            # column_lower = cx * 3
+            # column_upper = (cx + 1) * 3
+            # array_pixels[row_lower:row_upper, column_lower:column_upper] = np.tile((color_lookup_rgb[state]), (3, 3))
+
+    img = Image.fromarray(array_colours, mode="RGB")
+    array_pixels = img.load()
+
+    return img, array_pixels
 
 
 def print_states(array_input: np.ndarray, ticks: int):
