@@ -25,7 +25,7 @@ array_default = [
 ]
 
 valid_states = (0, 1, 2, 3)
-color_lookup = (None, "#0000ff", "#ff0000", "#ffff00")
+color_lookup = ("#d9d9d9", "#0000ff", "#ff0000", "#ffff00")
 
 
 class WireWorldInstance:
@@ -191,12 +191,17 @@ class WireWorldInstance:
         # WireCell is a tkinter button that represents the corresponding cell in array_states.
         # It is generated, along with the state array, by the parse_array function.
         # Accepts positional coordinates and an initial state as arguments, as well as the standard master.
-        def __init__(self, master, row_input, column_input, state=0):
+        def __init__(self, master, wireworld_parent, row_input, column_input, state=0):
+            # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
+            enforce_type_wireworld(wireworld_parent)
+            self.wireworld_parent = wireworld_parent
+
             super().__init__(master)
             self.master = master
 
             self.row, self.column = row_input, column_input
             self.grid(row=self.row, column=self.column)
+            self.configure(command=lambda: self.edit_state())
 
             self.state = state
 
@@ -215,6 +220,14 @@ class WireWorldInstance:
                         background=target_colour,
                         activebackground=target_colour
                     )
+
+        def edit_state(self):
+            if self.state <= 0:
+                self.state = 3
+            else:
+                self.state -= 1
+
+            self.wireworld_parent.array_states[self.row][self.column] = self.state
 
     ####################################################################################################################
     # WireWorldInstance methods
@@ -278,7 +291,13 @@ class WireWorldInstance:
         for rx, r in enumerate(array_input):
             for cx, c in enumerate(r):
                 state = c
-                self.WireCell(master=self.gui_grid, state=state, row_input=rx, column_input=cx)
+                self.WireCell(
+                    master=self.gui_grid,
+                    wireworld_parent=self,
+                    state=state,
+                    row_input=rx,
+                    column_input=cx
+                )
 
         print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
 
