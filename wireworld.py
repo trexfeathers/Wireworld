@@ -166,6 +166,12 @@ class WireWorldInstance:
                 control_list.remove(i)
 
             toggle_tk_widget(is_enable_mode=set_to_play, toggle_tuple=tuple(control_list))
+            # Also everything in the gui grid if it exists yet:
+            if "gui_grid" in self.wireworld_parent.__dict__:
+                toggle_tk_widget(
+                    is_enable_mode=set_to_play,
+                    toggle_tuple=tuple(self.wireworld_parent.gui_grid.winfo_children())
+                )
 
             # Change the text and function of the play/pause button depending on the current playback state.
             if set_to_play:
@@ -185,6 +191,8 @@ class WireWorldInstance:
         def __init__(self, master):
             super().__init__(master)
             self.master = master
+            # Embedding an image in a widget prevents tk using font sizing of buttons (not square):
+            self.blank_image = tk.PhotoImage()
             self.pack()
 
     class WireCell(tk.Button):
@@ -201,7 +209,13 @@ class WireWorldInstance:
 
             self.row, self.column = row_input, column_input
             self.grid(row=self.row, column=self.column)
-            self.configure(command=lambda: self.edit_state())
+            button_size = 15    # px
+            self.configure(
+                image=master.blank_image,   # prevents tk using font sizing of buttons (not square)
+                command=lambda: self.edit_state(),
+                height=button_size,
+                width=button_size,
+            )
 
             self.state = state
 
@@ -222,11 +236,14 @@ class WireWorldInstance:
                     )
 
         def edit_state(self):
+            # Called when the WireCell button is clicked - this is how the state is edited.
+            # Cycles backwards through states since 3 will be the most common.
             if self.state <= 0:
                 self.state = 3
             else:
                 self.state -= 1
 
+            # Update the state array with the change.
             self.wireworld_parent.array_states[self.row][self.column] = self.state
 
     ####################################################################################################################
