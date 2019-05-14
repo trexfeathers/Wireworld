@@ -12,6 +12,7 @@ import yaml
 from copy import deepcopy
 from scipy import misc as smp
 from PIL import Image
+from PIL import ImageTk
 from tkinter import filedialog
 from yaml import parser
 from yaml import scanner
@@ -32,12 +33,12 @@ color_lookup = ("#d9d9d9", "#0000ff", "#ff0000", "#ffff00")
 
 def rgb_from_hex(hex_colour):
     try:
-        return list(int(hex_colour[i:i + 2], 16) for i in (1, 3, 5))
+        return tuple(int(hex_colour[i:i + 2], 16) for i in (1, 3, 5))
     except ValueError:
         raise Exception("Invalid hex colour provided. Example format: #ff00ff")
 
 
-color_lookup_rgb = [rgb_from_hex(i) for i in color_lookup]
+color_lookup_rgb = tuple([rgb_from_hex(i) for i in color_lookup])
 
 
 class WireWorldInstance:
@@ -183,10 +184,10 @@ class WireWorldInstance:
 
             toggle_tk_widget(is_enable_mode=set_to_play, toggle_tuple=tuple(control_list))
             # Also everything in the gui grid if it exists yet:
-            if "gui_grid" in self.wireworld_parent.__dict__:
+            if "gui_edit" in self.wireworld_parent.__dict__:
                 toggle_tk_widget(
                     is_enable_mode=set_to_play,
-                    toggle_tuple=tuple(self.wireworld_parent.gui_grid.winfo_children())
+                    toggle_tuple=tuple(self.wireworld_parent.gui_edit.winfo_children())
                 )
 
             # Change the text and function of the play/pause button depending on the current playback state.
@@ -202,7 +203,7 @@ class WireWorldInstance:
                 command=command_var
             )
 
-    class GuiGrid(tk.Frame):
+    class GuiEdit(tk.Frame):
         # The container for tkinter widgets displaying the wireworld instance.
         def __init__(self, master):
             super().__init__(master)
@@ -219,10 +220,9 @@ class WireWorldInstance:
 
             super().__init__(master)
             self.master = master
-            self.image = Image.fromarray(self.wireworld_parent.array_states)
-            self.photo = tk.PhotoImage
+
             self.pack(side="top", fill="both", expand="yes")
-            self.create_image(10, 10, image=self.photo, anchor="nw")
+            # TODO: investigate self.create_rectangle()
 
     class WireCell(tk.Button):
         # WireCell is a tkinter button that represents the corresponding cell in array_states.
@@ -328,7 +328,9 @@ class WireWorldInstance:
         array_input = cleanse_array(array_input)
 
         self.wipe_wireworld()
-        self.create_grid_window()
+
+        self.create_map_window()
+        self.create_edit_window()
 
         self.array_states = np.array(deepcopy(array_input))
         self.array_states_original = deepcopy(self.array_states)
@@ -338,55 +340,63 @@ class WireWorldInstance:
             for cx, c in enumerate(r):
                 state = c
                 self.WireCell(
-                    master=self.gui_grid,
+                    master=self.gui_edit,
                     wireworld_parent=self,
                     state=state,
                     row_input=rx,
                     column_input=cx
                 )
 
-        self.img, self.array_pixels = pixels_from_array(self.array_states)
         print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
 
+    def create_map_window(self):
+        if "window_map" in self.__dict__:
+            self.window_map.destroy()
+        self.window_map = tk.Toplevel(self.tk_root)
+        self.window_map.title("Wireworld Map")
+        # Set to re-disable relevant gui controls when the edit is closed.
+        self.window_map.protocol("WM_DELETE_WINDOW", self.map_on_closing)
 
-        # img = smp.toimage(self.array_states)
-        # img.show()
-
-    def create_grid_window(self):
-        # Create and position a new GUI window independent of the controls window.
-
-        def parse_tk_geometry(geometry_input: str):
-            # Convert tk's specific geometry string into a 4 item list
-            geometry_list = geometry_input.split("+")
-            geometry_dimensions = geometry_list[0].split("x")
-            geometry_position = geometry_list[1:3]
-            geometry_parsed = geometry_dimensions + geometry_position
-            geometry_parsed = [int(i) for i in geometry_parsed]
-            return geometry_parsed
-
-        # Initiate or re-initiate the window that will contain the wireworld grid.
-        if "window_grid" in self.__dict__:
-            self.window_grid.destroy()
-        self.window_grid = tk.Toplevel(self.tk_root)
-        self.window_grid.title("Wireworld Grid")
-
-        # Initiate or re-initiate the frame that will contain the wireworld grid.
-        if "gui_grid" in self.__dict__:
-            self.gui_grid.destroy()
-        self.gui_grid = self.GuiGrid(master=self.window_grid)
-
-        # Position the grid window to the right of the control window.
+        if "gui_map" in self.__dict__:
+            self.gui_map.destroy()
+        self.gui_map = self.GuiMap(master=self.window_map, wireworld_parent=self)
+        
+        # Position the edit window underneath the control window.
         geometry_controls = parse_tk_geometry(self.tk_root.geometry())
-        geometry_grid = parse_tk_geometry(self.window_grid.geometry())
-        geometry_grid[3] = geometry_controls[3]
-        geometry_grid[2] = geometry_controls[2] + geometry_controls[0] + 20
-        self.window_grid.geometry("+%d+%d" % tuple(geometry_grid[2:4]))
-
-        # Enable relevant gui controls now the grid has been created
+        geometry_map = parse_tk_geometry(self.window_map.geometry())
+        geometry_map[3] = geometry_controls[3] + 8
+        geometry_map[2] = geometry_controls[2] + geometry_controls[0] + 20
+        self.window_map.geometry("+%d+%d" % tuple(geometry_map[2:4]))
+        
+        # Enable relevant gui controls now the map has been created
         self.gui_controls.toggle_interaction_controls(is_enable_mode=True)
 
-        # Set to re-disable relevant gui controls when the grid is closed
-        self.window_grid.protocol("WM_DELETE_WINDOW", self.grid_on_closing)
+    def create_edit_window(self):
+        # Create and position a new GUI window independent of the controls window.
+
+        # Initiate or re-initiate the window that will contain the edit gui.
+        # An existing window is destroyed not re-used since several 'reset' methods are held within map_on_closing.
+        if "window_edit" in self.__dict__:
+            self.window_edit.destroy()
+        self.window_edit = tk.Toplevel(self.tk_root)
+        self.window_edit.title("Wireworld Edit")
+        # Set to re-disable relevant gui controls when the edit is closed.
+        # self.window_edit.protocol("WM_DELETE_WINDOW", self.edit_on_closing)
+
+        # Initiate or re-initiate the frame that will contain the edit gui.
+        if "gui_edit" in self.__dict__:
+            self.gui_edit.destroy()
+        self.gui_edit = self.GuiEdit(master=self.window_edit)
+
+        # Position the edit window underneath the control window.
+        geometry_controls = parse_tk_geometry(self.tk_root.geometry())
+        geometry_edit = parse_tk_geometry(self.window_edit.geometry())
+        geometry_edit[3] = geometry_controls[3] + geometry_controls[1] + 50
+        geometry_edit[2] = geometry_controls[2] + 10
+        self.window_edit.geometry("+%d+%d" % tuple(geometry_edit[2:4]))
+
+        # Enable relevant gui controls now the edit has been created
+        self.gui_controls.toggle_interaction_controls(is_enable_mode=True)
 
     def advance_step(self):
         # Advance the wireworld instance to the next time step.
@@ -397,11 +407,8 @@ class WireWorldInstance:
             # changed_coords provides a list, which is used to identify each button that needs updating.
             state = self.array_states[rx][cx]
 
-            target_button = self.gui_grid.grid_slaves(rx, cx)[0]
+            target_button = self.gui_edit.grid_slaves(rx, cx)[0]
             target_button.state = state
-
-            # for ix, rgb_element in enumerate(color_lookup_rgb[state]):
-            self.array_pixels[rx, cx] = color_lookup_rgb[state]
 
         self.time_ticker.ticks += 1
         # Terminal output of states.
@@ -424,19 +431,20 @@ class WireWorldInstance:
         # Halts the loop within continuous_play_start if it is running.
         self.keep_playing = False
 
-    def grid_on_closing(self):
+    def map_on_closing(self):
         # Run when a grid window is closed.
         self.wipe_wireworld()
         if "gui_controls" in self.__dict__:
             self.gui_controls.toggle_interaction_controls(is_enable_mode=False)
-        if "window_grid" in self.__dict__:
-            self.window_grid.destroy()
+        if "window_map" in self.__dict__:
+            self.window_map.destroy()
+        if "window_edit" in self.__dict__:
+            self.window_edit.destroy()
 
     def wipe_wireworld(self):
         # New time ticker, new state array.
         self.time_ticker = self.TimeTicker(wireworld_parent=self)
         self.array_states = np.array([[0]])     # single empty cell
-        self.array_pixels = pixels_from_array(self.array_states)
 
     def reset_to_original(self):
         # array_states_original is recorded from the initial array_states when parse_array is run.
@@ -584,30 +592,30 @@ def cycle_states(array_input: np.ndarray):
     return array_future, changed_coords
 
 
-def pixels_from_array(array_input: np.ndarray):
-    array_input = cleanse_array(array_input)
-
-    # array_pixels = [[()]]
-
-    # array_pixels = np.repeat(np.repeat(array_input, 3, 0), 3, 1)
-    # array_pixels = deepcopy(array_input)
-    # array_pixels = np.expand_dims(array_pixels, axis=1)
-    array_colours = np.empty(np.shape(array_input) + (3,), dtype=np.uint8)
-    for rx, r in enumerate(array_input):
-        for cx, c in enumerate(r):
-            state = c
-            array_colours[rx][cx] = color_lookup_rgb[state]
-            # state = c
-            # row_lower = rx * 3
-            # row_upper = (rx + 1) * 3
-            # column_lower = cx * 3
-            # column_upper = (cx + 1) * 3
-            # array_pixels[row_lower:row_upper, column_lower:column_upper] = np.tile((color_lookup_rgb[state]), (3, 3))
-
-    img = Image.fromarray(array_colours, mode="RGB")
-    array_pixels = img.load()
-
-    return img, array_pixels
+# def pixels_from_array(array_input: np.ndarray):
+#     array_input = cleanse_array(array_input)
+#
+#     # array_pixels = [[()]]
+#
+#     # array_pixels = np.repeat(np.repeat(array_input, 3, 0), 3, 1)
+#     # array_pixels = deepcopy(array_input)
+#     # array_pixels = np.expand_dims(array_pixels, axis=1)
+#     array_colours = np.empty(np.shape(array_input) + (3,), dtype=np.uint8)
+#     for rx, r in enumerate(array_input):
+#         for cx, c in enumerate(r):
+#             state = c
+#             array_colours[rx][cx] = color_lookup_rgb[state]
+#             # state = c
+#             # row_lower = rx * 3
+#             # row_upper = (rx + 1) * 3
+#             # column_lower = cx * 3
+#             # column_upper = (cx + 1) * 3
+#             # array_pixels[row_lower:row_upper, column_lower:column_upper] = np.tile((color_lookup_rgb[state]), (3, 3))
+#
+#     img = Image.fromarray(array_colours, mode="RGB")
+#     array_pixels = img.load()
+#
+#     return img, array_pixels
 
 
 def print_states(array_input: np.ndarray, ticks: int):
@@ -627,6 +635,15 @@ def toggle_tk_widget(is_enable_mode: bool, toggle_tuple: tuple):
             control.configure(state=state_toggle)
         except AttributeError:
             pass
+
+def parse_tk_geometry(geometry_input: str):
+    # Convert tk's specific geometry string into a 4 item list
+    geometry_list = geometry_input.split("+")
+    geometry_dimensions = geometry_list[0].split("x")
+    geometry_position = geometry_list[1:3]
+    geometry_parsed = geometry_dimensions + geometry_position
+    geometry_parsed = [int(i) for i in geometry_parsed]
+    return geometry_parsed
 
 ########################################################################################################################
 
