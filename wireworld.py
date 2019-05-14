@@ -217,14 +217,35 @@ class WireWorldInstance:
 
             super().__init__(master)
             self.master = master
+            self.color_lookup = ("#646464",) + color_lookup[1:]
+            array_shape = np.shape(wireworld_parent.array_states)
+            self.array_cells = np.empty(array_shape, dtype=np.dtype(np.int32))
+            self.cell_size = 4
+            self.configure(
+                height=max(array_shape[0] * self.cell_size, 100),
+                width=max(array_shape[1] * self.cell_size, 100)
+            )
+            # self.pack(side="top", fill="both", expand="yes")
+            self.pack()
 
-            self.pack(side="top", fill="both", expand="yes")
-            # TODO: investigate self.create_rectangle()
-
-        def create_cell(self, row, column, state):
-
-        def update_cell(self, row, column, state):
-
+        def create_update_cell(self, row, column, state, is_create_mode=False):
+            target_colour = self.color_lookup[state]
+            if is_create_mode:
+                x_lower = column * self.cell_size
+                y_lower = row * self.cell_size
+                x_upper = x_lower + self.cell_size
+                y_upper = y_lower + self.cell_size
+                self.array_cells[row][column] = self.create_rectangle(
+                    x_lower,
+                    y_lower,
+                    x_upper,
+                    y_upper,
+                    outline=self.color_lookup[0],
+                    fill=target_colour
+                )
+            else:
+                target_item = self.array_cells[row][column]
+                self.itemconfigure(target_item, fill=target_colour)
 
     class WireCellEdit(tk.Button):
         # WireCellEdit is a tkinter button that represents the corresponding cell in array_states.
@@ -255,7 +276,7 @@ class WireWorldInstance:
             self.__dict__[name] = value
             if name == "state":
                 # state is limited to one of the correct values.
-                self.state = cleanse_state(self.state)
+                self.__dict__[name] = cleanse_state(value)
 
                 # Represent the Wireworld state using one of the accepted colours.
                 if len(color_lookup) > self.state:
@@ -275,6 +296,14 @@ class WireWorldInstance:
 
             # Update the state array with the change.
             self.wireworld_parent.array_states[self.row][self.column] = self.state
+
+            self.wireworld_parent.gui_map.create_update_cell(
+                self.row,
+                self.column,
+                self.state,
+                is_create_mode=False
+            )
+            # TODO: create a generic way of keeping all 3 arrays updated (states, map, edit)
 
     ####################################################################################################################
     # WireWorldInstance methods
@@ -330,23 +359,26 @@ class WireWorldInstance:
 
         self.wipe_wireworld()
 
+        self.array_states = np.array(deepcopy(array_input))
+        self.array_states_original = deepcopy(self.array_states)
+
         self.create_map_window()
         self.create_edit_window()
 
-        self.array_states = np.array(deepcopy(array_input))
-        self.array_states_original = deepcopy(self.array_states)
         # Iterate over the rows then the columns of the input array,
         # creating a new button in the appropriate GUI grid position.
         for rx, r in enumerate(array_input):
             for cx, c in enumerate(r):
                 state = c
                 self.WireCellEdit(
+                    # TODO: make WireCellEdit an inner class of the edit gui and maybe force a dependency
                     master=self.gui_edit,
                     wireworld_parent=self,
                     state=state,
                     row_input=rx,
-                    column_input=cx
+                    column_input=cx,
                 )
+                self.gui_map.create_update_cell(rx, cx, state, is_create_mode=True)
 
         print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
 
@@ -411,6 +443,9 @@ class WireWorldInstance:
             target_button = self.gui_edit.grid_slaves(rx, cx)[0]
             target_button.state = state
 
+            self.gui_map.create_update_cell(rx, cx, state, is_create_mode=False)
+
+        self.gui_map.update()
         self.time_ticker.ticks += 1
         # Terminal output of states.
         print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
@@ -643,6 +678,7 @@ def toggle_tk_widget(is_enable_mode: bool, toggle_tuple: tuple):
         except AttributeError:
             pass
 
+
 def parse_tk_geometry(geometry_input: str):
     # Convert tk's specific geometry string into a 4 item list
     geometry_list = geometry_input.split("+")
@@ -651,6 +687,50 @@ def parse_tk_geometry(geometry_input: str):
     geometry_parsed = geometry_dimensions + geometry_position
     geometry_parsed = [int(i) for i in geometry_parsed]
     return geometry_parsed
+
+
+def resize_array(array_input, face, ranks):
+    if not check_2d_array(array_input):
+        raise Exception("Input array format error. Must be 2 dimensional array")
+
+    array_shape = np.shape(array_input)
+    blank_row = np.zeros(array_shape[0])
+    blank_column = np.zeros(array_shape[1])
+
+    if face in ("n", "s"):
+        axis = 0
+    elif face in ("w", "e"):
+        axis = 1
+
+    if ranks < 0:
+        meth = "delete"
+    elif ranks > 0:
+        if ranks in ("n", "w"):
+        meth = "insert"
+    elif ranks in ("e", "s"):
+        meth = "append"
+
+    if meth = "delete":
+        np.delete(arr=array_input, )
+
+    # ranks = int(ranks)
+    if ranks > 0:
+        if face == "n":
+            axis = 1
+
+        if face in ("w", "n"):
+            axis = 0 if face == "w" else 1
+            np.insert(arr=array_input, obj=0, values=np, axis=axis)
+        elif face in ("e", "s"):
+            pass
+        # else:
+        #     raise Exception("Invalid face value. Must be on of (n, e, s, w)")
+    elif ranks < 0:
+        pass
+    # else:
+    #     raise Exception("Invalid ranks value. Must be more or less than 0")
+
+
 
 ########################################################################################################################
 
