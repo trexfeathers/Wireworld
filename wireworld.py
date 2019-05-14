@@ -10,9 +10,6 @@ import tkinter as tk
 import yaml
 
 from copy import deepcopy
-from scipy import misc as smp
-from PIL import Image
-from PIL import ImageTk
 from tkinter import filedialog
 from yaml import parser
 from yaml import scanner
@@ -224,8 +221,13 @@ class WireWorldInstance:
             self.pack(side="top", fill="both", expand="yes")
             # TODO: investigate self.create_rectangle()
 
-    class WireCell(tk.Button):
-        # WireCell is a tkinter button that represents the corresponding cell in array_states.
+        def create_cell(self, row, column, state):
+
+        def update_cell(self, row, column, state):
+
+
+    class WireCellEdit(tk.Button):
+        # WireCellEdit is a tkinter button that represents the corresponding cell in array_states.
         # It is generated, along with the state array, by the parse_array function.
         # Accepts positional coordinates and an initial state as arguments, as well as the standard master.
         def __init__(self, master, wireworld_parent, row_input, column_input, state=0):
@@ -253,8 +255,7 @@ class WireWorldInstance:
             self.__dict__[name] = value
             if name == "state":
                 # state is limited to one of the correct values.
-                if self.state not in valid_states:
-                    self.state = valid_states[0]
+                self.state = cleanse_state(self.state)
 
                 # Represent the Wireworld state using one of the accepted colours.
                 if len(color_lookup) > self.state:
@@ -265,7 +266,7 @@ class WireWorldInstance:
                     )
 
         def edit_state(self):
-            # Called when the WireCell button is clicked - this is how the state is edited.
+            # Called when the WireCellEdit button is clicked - this is how the state is edited.
             # Cycles backwards through states since 3 will be the most common.
             if self.state <= 0:
                 self.state = 3
@@ -339,7 +340,7 @@ class WireWorldInstance:
         for rx, r in enumerate(array_input):
             for cx, c in enumerate(r):
                 state = c
-                self.WireCell(
+                self.WireCellEdit(
                     master=self.gui_edit,
                     wireworld_parent=self,
                     state=state,
@@ -533,6 +534,14 @@ def format_yaml(string_input: str):
     return yaml_content
 
 
+def cleanse_state(state):
+    # Ensure state is one that is part of wireworld.
+    if state not in valid_states:
+        state = valid_states[0]
+
+    return state
+
+
 def check_2d_array(array_input):
     # A basic check to make sure the input array has properties that can be worked with.
     format_ok = False
@@ -549,9 +558,7 @@ def cleanse_array(array_input):
 
     for rx, r in enumerate(array_input):
         for cx, c in enumerate(r):
-            state = c
-            if state not in valid_states:
-                array_input[rx][cx] = valid_states[0]
+            c = cleanse_state(c)
 
     return array_input
 
