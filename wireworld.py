@@ -26,6 +26,7 @@ array_default = [
 
 valid_states = (0, 1, 2, 3)
 color_lookup = ("#d9d9d9", "#0000ff", "#ff0000", "#ffff00")
+# color_lookup = ("#646464", "#0000ff", "#ff0000", "#ffff00")
 
 
 def rgb_from_hex(hex_colour):
@@ -184,7 +185,7 @@ class WireWorldInstance:
             if "gui_edit" in self.wireworld_parent.__dict__:
                 toggle_tk_widget(
                     is_enable_mode=set_to_play,
-                    toggle_tuple=tuple(self.wireworld_parent.gui_edit.winfo_children())
+                    toggle_tuple=tuple(self.wireworld_parent.gui_edit.matrix.winfo_children())
                 )
 
             # Change the text and function of the play/pause button depending on the current playback state.
@@ -202,12 +203,86 @@ class WireWorldInstance:
 
     class GuiEdit(tk.Frame):
         # The container for tkinter widgets displaying the wireworld instance.
-        def __init__(self, master):
+        def __init__(self, master, wireworld_parent):
+            # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
+            enforce_type_wireworld(wireworld_parent)
+            self.wireworld_parent = wireworld_parent
+
             super().__init__(master)
             self.master = master
             # Embedding an image in a widget prevents tk using font sizing of buttons (not square):
-            self.blank_image = tk.PhotoImage()
+            # self.blank_image = tk.PhotoImage()
+
+            top_frame = tk.Frame(master=self)
+            top_frame.pack(side=tk.TOP)
+
+            # TODO: create a matrix class, which tracks its dimensions and its top left corner
+            self.matrix = tk.Frame(master=self)
+            self.matrix.pack(side=tk.TOP)
+
+            self.controls_add = self.GuiEditControls(master=top_frame, central_text="add")
+            self.controls_del = self.GuiEditControls(master=top_frame, central_text="del")
+            self.controls_nav = self.GuiEditControls(master=top_frame, central_text="nav")
+
+            self.controls_add.pack(side=tk.LEFT)
+            self.controls_del.pack(side=tk.LEFT)
+            self.controls_nav.pack(side=tk.LEFT)
+
+            # TODO: write this more efficiently
+            self.controls_add.north.configure(command=lambda: self.wireworld_parent.resize(face="n", ranks=1))
+            self.controls_add.east.configure(command=lambda: self.wireworld_parent.resize(face="e", ranks=1))
+            self.controls_add.south.configure(command=lambda: self.wireworld_parent.resize(face="s", ranks=1))
+            self.controls_add.west.configure(command=lambda: self.wireworld_parent.resize(face="w", ranks=1))
+
+            self.controls_del.north.configure(command=lambda: self.wireworld_parent.resize(face="n", ranks=-1))
+            self.controls_del.east.configure(command=lambda: self.wireworld_parent.resize(face="e", ranks=-1))
+            self.controls_del.south.configure(command=lambda: self.wireworld_parent.resize(face="s", ranks=-1))
+            self.controls_del.west.configure(command=lambda: self.wireworld_parent.resize(face="w", ranks=-1))
+
             self.pack()
+
+        # class GuiEditGrid(tk.Frame):
+
+        class GuiEditControls(tk.Frame):
+            def __init__(self, master, central_text=" "):
+                super().__init__(master)
+                self.master = master
+
+                self.north = self.ButtonNESW(master=self)
+                self.east = self.ButtonNESW(master=self)
+                self.south = self.ButtonNESW(master=self)
+                self.west = self.ButtonNESW(master=self)
+
+                self.north.grid(row=0, column=2)
+                self.east.grid(row=1, column=3)
+                self.south.grid(row=2, column=2)
+                self.west.grid(row=1, column=1)
+
+                # spacers
+                tk.Label(master=self, text=" ").grid(row=1, column=0)
+                tk.Label(master=self, text=" ").grid(row=1, column=4)
+                tk.Label(master=self, text=" ").grid(row=4, column=1)
+
+                tk.Label(
+                    master=self,
+                    text=central_text,
+                    font="Arial 8 bold"
+                ).grid(row=1, column=2)
+
+                self.pack()
+
+            class ButtonNESW(tk.Button):
+                def __init__(self, master):
+                    super().__init__(master)
+                    self.master = master
+                    # TODO: find a central location for a single blank_image
+                    self.blank_image = tk.PhotoImage()
+                    self.configure(
+                        image=self.blank_image,
+                        height=8,
+                        width=8,
+                    )
+
 
     class GuiMap(tk.Canvas):
         def __init__(self, master, wireworld_parent):
@@ -218,15 +293,27 @@ class WireWorldInstance:
             super().__init__(master)
             self.master = master
             self.color_lookup = ("#646464",) + color_lookup[1:]
-            array_shape = np.shape(wireworld_parent.array_states)
-            self.array_cells = np.empty(array_shape, dtype=np.dtype(np.int32))
             self.cell_size = 4
+            self.draw_canvas()
+
+            # self.pack(side="top", fill="both", expand="yes")
+            self.pack()
+
+        def draw_canvas(self):
+            self.delete("all")
+            array_shape = np.shape(self.wireworld_parent.array_states)
+            self.array_cells = np.empty(array_shape, dtype=np.int32)    # new array because won't just be storing states
+            # self.array_cells = deepcopy(self.wireworld_parent.array_states)
+            # array_shape = np.shape(self.array_cells)
             self.configure(
                 height=max(array_shape[0] * self.cell_size, 100),
                 width=max(array_shape[1] * self.cell_size, 100)
             )
-            # self.pack(side="top", fill="both", expand="yes")
-            self.pack()
+
+            for rx, r in enumerate(self.wireworld_parent.array_states):
+                for cx, c in enumerate(r):
+                    state = c
+                    self.create_update_cell(rx, cx, state, is_create_mode=True)
 
         def create_update_cell(self, row, column, state, is_create_mode=False):
             target_colour = self.color_lookup[state]
@@ -258,12 +345,13 @@ class WireWorldInstance:
 
             super().__init__(master)
             self.master = master
+            self.blank_image = tk.PhotoImage()
 
             self.row, self.column = row_input, column_input
             self.grid(row=self.row, column=self.column)
             button_size = 15    # px
             self.configure(
-                image=master.blank_image,   # prevents tk using font sizing of buttons (not square)
+                image=self.blank_image,   # prevents tk using font sizing of buttons (not square)
                 command=lambda: self.edit_state(),
                 height=button_size,
                 width=button_size,
@@ -372,13 +460,14 @@ class WireWorldInstance:
                 state = c
                 self.WireCellEdit(
                     # TODO: make WireCellEdit an inner class of the edit gui and maybe force a dependency
-                    master=self.gui_edit,
+                    master=self.gui_edit.matrix,
                     wireworld_parent=self,
                     state=state,
                     row_input=rx,
                     column_input=cx,
                 )
-                self.gui_map.create_update_cell(rx, cx, state, is_create_mode=True)
+                # self.gui_map.create_update_cell(rx, cx, state, is_create_mode=True)
+                self.gui_map.draw_canvas()
 
         print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
 
@@ -419,7 +508,7 @@ class WireWorldInstance:
         # Initiate or re-initiate the frame that will contain the edit gui.
         if "gui_edit" in self.__dict__:
             self.gui_edit.destroy()
-        self.gui_edit = self.GuiEdit(master=self.window_edit)
+        self.gui_edit = self.GuiEdit(master=self.window_edit, wireworld_parent=self)
 
         # Position the edit window underneath the control window.
         geometry_controls = parse_tk_geometry(self.tk_root.geometry())
@@ -440,7 +529,7 @@ class WireWorldInstance:
             # changed_coords provides a list, which is used to identify each button that needs updating.
             state = self.array_states[rx][cx]
 
-            target_button = self.gui_edit.grid_slaves(rx, cx)[0]
+            target_button = self.gui_edit.matrix.grid_slaves(rx, cx)[0]
             target_button.state = state
 
             self.gui_map.create_update_cell(rx, cx, state, is_create_mode=False)
@@ -487,6 +576,22 @@ class WireWorldInstance:
         # This allows the user to return to the states of time step 0.
         if "array_states_original" in self.__dict__:
             self.parse_array(self.array_states_original)
+
+    def resize(self, face: str, ranks=1):
+        self.array_states, axis_shift, rank_shift = resize_array(array_input=self.array_states, face=face, ranks=ranks)
+        self.gui_map.draw_canvas()
+        for rx, r in enumerate(self.array_states):
+            for cx, c in enumerate(r):
+                try:
+                    target_button = self.gui_edit.matrix.grid_slaves(rx, cx)[0]
+                    if rank_shift != 0:
+                        if axis_shift == 0:
+                            target_button.row += rank_shift
+                        elif axis_shift == 1:
+                            target_button.column += rank_shift
+                except IndexError:      # will happen when growing array
+                    pass
+
 
 ########################################################################################################################
 # independent functions
@@ -689,47 +794,57 @@ def parse_tk_geometry(geometry_input: str):
     return geometry_parsed
 
 
-def resize_array(array_input, face, ranks):
+def resize_array(array_input, face: str, ranks=1):
     if not check_2d_array(array_input):
         raise Exception("Input array format error. Must be 2 dimensional array")
 
+    try:
+        abs_ranks = int(abs(ranks))
+    except ValueError:
+        raise Exception("Invalid ranks value. Must be integer")
+
     array_shape = np.shape(array_input)
-    blank_row = np.zeros(array_shape[0])
-    blank_column = np.zeros(array_shape[1])
+    kwargs = {"arr": array_input}
 
-    if face in ("n", "s"):
-        axis = 0
-    elif face in ("w", "e"):
-        axis = 1
+    if face in ["n", "s"]:
+        axis_shift = 0
+        kwargs["axis"] = axis_shift
+        kwargs["values"] = np.zeros((abs_ranks, array_shape[1]), dtype=np.int8)     # blank rows
+    elif face in ["e", "w"]:
+        axis_shift = 1
+        kwargs["axis"] = axis_shift
+        if face == "e":
+            kwargs["values"] = np.zeros((array_shape[0], abs_ranks), dtype=np.int8)
+            # blank rows that are converted to columns by np.append()
+        else:
+            kwargs["values"] = np.zeros((abs_ranks, array_shape[0]), dtype=np.int8)     # blank columns
+    else:
+        raise Exception("Invalid face value. Must be on of (n, e, s, w)")
 
-    if ranks < 0:
-        meth = "delete"
-    elif ranks > 0:
-        if ranks in ("n", "w"):
-        meth = "insert"
-    elif ranks in ("e", "s"):
-        meth = "append"
-
-    if meth = "delete":
-        np.delete(arr=array_input, )
-
-    # ranks = int(ranks)
-    if ranks > 0:
-        if face == "n":
-            axis = 1
-
-        if face in ("w", "n"):
-            axis = 0 if face == "w" else 1
-            np.insert(arr=array_input, obj=0, values=np, axis=axis)
+    if ranks < 0:       # deletion mode
+        del kwargs["values"]
+        if face in ("n", "w"):
+            kwargs["obj"] = np.s_[:abs_ranks]
         elif face in ("e", "s"):
-            pass
-        # else:
-        #     raise Exception("Invalid face value. Must be on of (n, e, s, w)")
-    elif ranks < 0:
-        pass
-    # else:
-    #     raise Exception("Invalid ranks value. Must be more or less than 0")
+            kwargs["obj"] = np.s_[-abs_ranks:]
+        array_output = np.delete(**kwargs)
 
+    elif ranks > 0:     # addition mode
+        if face in ("n", "w"):
+            kwargs["obj"] = 0
+            array_output = np.insert(**kwargs)
+        elif face in ("e", "s"):
+            array_output = np.append(**kwargs)
+
+    else:
+        raise Exception("Invalid ranks value. Must be more or less than 0")
+
+    rank_shift = ranks if face in ("n", "w") else 0
+
+    if "array_output" in locals():
+        return array_output, axis_shift, rank_shift
+    else:
+        print("No array to return")
 
 
 ########################################################################################################################
