@@ -50,6 +50,8 @@ class WireWorldInstance:
         self.gui_controls = self.GuiControls(master=self.tk_root, wireworld_parent=self)
         self.tk_root.title("Wireworld Controls")
 
+        self.blank_image = tk.PhotoImage()
+
         self.wipe_wireworld()
 
     def __setattr__(self, name, value):
@@ -88,7 +90,7 @@ class WireWorldInstance:
             enforce_type_wireworld(wireworld_parent)
             self.wireworld_parent = wireworld_parent
             super().__init__(master)
-            self.master = master
+            # self.master = master
 
             # Used as kwargs when initiating every widget.
             button_standards = {
@@ -209,20 +211,19 @@ class WireWorldInstance:
             self.wireworld_parent = wireworld_parent
 
             super().__init__(master)
-            self.master = master
+            # self.master = master
             # Embedding an image in a widget prevents tk using font sizing of buttons (not square):
             # self.blank_image = tk.PhotoImage()
 
             top_frame = tk.Frame(master=self)
             top_frame.pack(side=tk.TOP)
 
-            # TODO: create a matrix class, which tracks its dimensions and its top left corner
-            self.matrix = tk.Frame(master=self)
+            self.matrix = self.GuiEditMatrix(master=self,wireworld_parent=self.wireworld_parent)
             self.matrix.pack(side=tk.TOP)
 
-            self.controls_add = self.GuiEditControls(master=top_frame, central_text="add")
-            self.controls_del = self.GuiEditControls(master=top_frame, central_text="del")
-            self.controls_nav = self.GuiEditControls(master=top_frame, central_text="nav")
+            self.controls_add = self.GuiEditControls(master=top_frame, wireworld_parent = self.wireworld_parent, central_text="add")
+            self.controls_del = self.GuiEditControls(master=top_frame, wireworld_parent = self.wireworld_parent, central_text="del")
+            self.controls_nav = self.GuiEditControls(master=top_frame, wireworld_parent = self.wireworld_parent, central_text="nav")
 
             self.controls_add.pack(side=tk.LEFT)
             self.controls_del.pack(side=tk.LEFT)
@@ -241,17 +242,24 @@ class WireWorldInstance:
 
             self.pack()
 
-        # class GuiEditGrid(tk.Frame):
-
         class GuiEditControls(tk.Frame):
-            def __init__(self, master, central_text=" "):
-                super().__init__(master)
-                self.master = master
+            def __init__(self, master, wireworld_parent, central_text=" "):
+                # Need to ensure a wireworld parent has been provided (class could be called independently).
+                enforce_type_wireworld(wireworld_parent)
+                self.wireworld_parent = wireworld_parent
 
-                self.north = self.ButtonNESW(master=self)
-                self.east = self.ButtonNESW(master=self)
-                self.south = self.ButtonNESW(master=self)
-                self.west = self.ButtonNESW(master=self)
+                super().__init__(master)
+                # self.master = master
+
+                kwargs = {
+                    "master": self,
+                    "wireworld_parent": self.wireworld_parent
+                }
+
+                self.north = self.ButtonNESW(**kwargs)
+                self.east = self.ButtonNESW(**kwargs)
+                self.south = self.ButtonNESW(**kwargs)
+                self.west = self.ButtonNESW(**kwargs)
 
                 self.north.grid(row=0, column=2)
                 self.east.grid(row=1, column=3)
@@ -272,17 +280,124 @@ class WireWorldInstance:
                 self.pack()
 
             class ButtonNESW(tk.Button):
-                def __init__(self, master):
+                def __init__(self, master, wireworld_parent):
+                    # Need to ensure a wireworld parent has been provided (class could be called independently).
+                    enforce_type_wireworld(wireworld_parent)
+                    self.wireworld_parent = wireworld_parent
+
                     super().__init__(master)
-                    self.master = master
-                    # TODO: find a central location for a single blank_image
-                    self.blank_image = tk.PhotoImage()
+
+                    button_size = 8
                     self.configure(
-                        image=self.blank_image,
-                        height=8,
-                        width=8,
+                        image=self.wireworld_parent.blank_image,
+                        height=button_size,
+                        width=button_size
                     )
 
+        class GuiEditMatrix(tk.Frame):
+            def __init__(self, master, wireworld_parent):
+                # Need to ensure a wireworld parent has been provided (class could be called independently).
+                enforce_type_wireworld(wireworld_parent)
+                self.wireworld_parent = wireworld_parent
+
+                super().__init__(master)
+
+                self.top_left = [0, 0]
+                self.dimensions = [1, 1]
+
+                self.reset_grid()
+
+            class ButtonWireCell(tk.Button):
+                def __init__(self, master, wireworld_parent, matrix_parent):
+                    # Need to ensure a wireworld parent has been provided (class could be called independently).
+                    enforce_type_wireworld(wireworld_parent)
+                    self.wireworld_parent = wireworld_parent
+
+                    if "top_left" not in matrix_parent.__dict__:
+                        raise Exception("Wireworld edit cell unable to get top_left property of edit matrix")
+
+                    super().__init__(master)
+                    self.matrix_parent = matrix_parent
+
+                    button_size = 15  # px
+                    self.configure(
+                        image=self.wireworld_parent.blank_image,  # stops tk using font sizing of buttons (not square)
+                        command=lambda: self.edit_state(),
+                        height=button_size,
+                        width=button_size,
+                    )
+
+                    self.state = valid_states[0]
+
+                def __setattr__(self, name, value):
+                    # Included to make sure the colour is updated whenever state changes.
+                    self.__dict__[name] = value
+                    if name == "state":
+                        # avoiding self.__dict__[name] = cleanse_state(value) for better performance
+                        # Represent the Wireworld state using one of the accepted colours.
+                        if len(color_lookup) > self.state:
+                            target_colour = color_lookup[self.state]
+                            self.configure(
+                                background=target_colour,
+                                activebackground=target_colour
+                            )
+
+                def edit_state(self):
+                    # Called when the WireCellEdit button is clicked - this is how the state is edited.
+                    # Cycles backwards through states since 3 will be the most common.
+                    if self.state <= 0:
+                        new_state = 3
+                    else:
+                        new_state = self.state - 1
+
+                    row = self.grid_info()["row"] + self.matrix_parent.top_left[0]
+                    column = self.grid_info()["column"] + self.matrix_parent.top_left[1]
+
+                    array_changes = [(row, column, new_state)]
+                    self.wireworld_parent.update_states(array_changes=array_changes)
+
+            def reset_grid(self):
+                for i in self.grid_slaves():
+                    i.destroy()
+                max_dimensions = [10, 10]
+                array_shape = np.shape(self.wireworld_parent.array_states)
+                row_offset = self.top_left[0]
+                column_offset = self.top_left[1]
+
+                self.dimensions[0] = min(max_dimensions[0], array_shape[0] - row_offset)
+                self.dimensions[1] = min(max_dimensions[1], array_shape[1] - column_offset)
+
+
+                for row in range(self.dimensions[0]):
+                    for column in range(self.dimensions[1]):
+                        self.ButtonWireCell(
+                            master=self,
+                            wireworld_parent=self.wireworld_parent,
+                            matrix_parent=self
+                        ).grid(
+                            row=row,
+                            column=column
+                        )
+
+            def update_states(self, array_changes):
+                enforce_coords_array(array_changes)
+                row_offset = self.top_left[0]
+                column_offset = self.top_left[1]
+                row_count = self.dimensions[0]
+                column_count = self.dimensions[1]
+
+                for row, column, state in array_changes:
+                    if row_offset <= row < row_offset + row_count and \
+                            column_offset <= column < column_offset + column_count:
+                                target_button = self.grid_slaves(
+                                    row=row - row_offset,
+                                    column=column - column_offset
+                                )[0]
+                                target_button.state = state
+
+            def top_left_shift(self, axis, ranks):
+                self.top_left[axis] = max(self.top_left[axis] + ranks, 0)
+                self.reset_grid()
 
     class GuiMap(tk.Canvas):
         def __init__(self, master, wireworld_parent):
@@ -291,29 +406,40 @@ class WireWorldInstance:
             self.wireworld_parent = wireworld_parent
 
             super().__init__(master)
-            self.master = master
+            # self.master = master
             self.color_lookup = ("#646464",) + color_lookup[1:]
             self.cell_size = 4
-            self.draw_canvas()
+            self.reset_canvas()
 
             # self.pack(side="top", fill="both", expand="yes")
             self.pack()
 
-        def draw_canvas(self):
+        def reset_canvas(self):
             self.delete("all")
             array_shape = np.shape(self.wireworld_parent.array_states)
-            self.array_cells = np.empty(array_shape, dtype=np.int32)    # new array because won't just be storing states
-            # self.array_cells = deepcopy(self.wireworld_parent.array_states)
-            # array_shape = np.shape(self.array_cells)
+            self.array_cells = np.empty(array_shape, dtype=np.int32)    # can't copy array_states - not storing states
             self.configure(
                 height=max(array_shape[0] * self.cell_size, 100),
                 width=max(array_shape[1] * self.cell_size, 100)
             )
 
-            for rx, r in enumerate(self.wireworld_parent.array_states):
-                for cx, c in enumerate(r):
-                    state = c
-                    self.create_update_cell(rx, cx, state, is_create_mode=True)
+            for row in range(array_shape[0]):
+                for column in range(array_shape[1]):
+                    self.create_cell(row=row, column=column)
+
+        def create_cell(self, row, column):
+            x_lower = column * self.cell_size
+            y_lower = row * self.cell_size
+            x_upper = x_lower + self.cell_size
+            y_upper = y_lower + self.cell_size
+            self.array_cells[row][column] = self.create_rectangle(
+                x_lower,
+                y_lower,
+                x_upper,
+                y_upper,
+                outline=self.color_lookup[0],
+                fill=self.color_lookup[0]
+            )
 
         def create_update_cell(self, row, column, state, is_create_mode=False):
             target_colour = self.color_lookup[state]
@@ -334,64 +460,12 @@ class WireWorldInstance:
                 target_item = self.array_cells[row][column]
                 self.itemconfigure(target_item, fill=target_colour)
 
-    class WireCellEdit(tk.Button):
-        # WireCellEdit is a tkinter button that represents the corresponding cell in array_states.
-        # It is generated, along with the state array, by the parse_array function.
-        # Accepts positional coordinates and an initial state as arguments, as well as the standard master.
-        def __init__(self, master, wireworld_parent, row_input, column_input, state=0):
-            # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
-            enforce_type_wireworld(wireworld_parent)
-            self.wireworld_parent = wireworld_parent
-
-            super().__init__(master)
-            self.master = master
-            self.blank_image = tk.PhotoImage()
-
-            self.row, self.column = row_input, column_input
-            self.grid(row=self.row, column=self.column)
-            button_size = 15    # px
-            self.configure(
-                image=self.blank_image,   # prevents tk using font sizing of buttons (not square)
-                command=lambda: self.edit_state(),
-                height=button_size,
-                width=button_size,
-            )
-
-            self.state = state
-
-        def __setattr__(self, name, value):
-            # Included to make sure the colour is updated whenever state changes.
-            self.__dict__[name] = value
-            if name == "state":
-                # state is limited to one of the correct values.
-                self.__dict__[name] = cleanse_state(value)
-
-                # Represent the Wireworld state using one of the accepted colours.
-                if len(color_lookup) > self.state:
-                    target_colour = color_lookup[self.state]
-                    self.configure(
-                        background=target_colour,
-                        activebackground=target_colour
-                    )
-
-        def edit_state(self):
-            # Called when the WireCellEdit button is clicked - this is how the state is edited.
-            # Cycles backwards through states since 3 will be the most common.
-            if self.state <= 0:
-                self.state = 3
-            else:
-                self.state -= 1
-
-            # Update the state array with the change.
-            self.wireworld_parent.array_states[self.row][self.column] = self.state
-
-            self.wireworld_parent.gui_map.create_update_cell(
-                self.row,
-                self.column,
-                self.state,
-                is_create_mode=False
-            )
-            # TODO: create a generic way of keeping all 3 arrays updated (states, map, edit)
+        def update_states(self, array_changes):
+            enforce_coords_array(array_changes)
+            for row, column, state in array_changes:
+                target_colour = self.color_lookup[state]
+                self.itemconfigure(self.array_cells[row][column], fill=target_colour)
+            self.update()
 
     ####################################################################################################################
     # WireWorldInstance methods
@@ -399,8 +473,6 @@ class WireWorldInstance:
     def execute(self):
         # The basic behaviour of a wireworld instance.
         try:
-            # self.parse_array(array_default)
-            # print_states(self.array_states, self.time_ticker.ticks)
             self.tk_root.mainloop()
         finally:
             # Close down the GUI no matter what.
@@ -453,24 +525,32 @@ class WireWorldInstance:
         self.create_map_window()
         self.create_edit_window()
 
-        # Iterate over the rows then the columns of the input array,
-        # creating a new button in the appropriate GUI grid position.
-        for rx, r in enumerate(array_input):
-            for cx, c in enumerate(r):
-                state = c
-                self.WireCellEdit(
-                    # TODO: make WireCellEdit an inner class of the edit gui and maybe force a dependency
-                    master=self.gui_edit.matrix,
-                    wireworld_parent=self,
-                    state=state,
-                    row_input=rx,
-                    column_input=cx,
-                )
-                # self.gui_map.create_update_cell(rx, cx, state, is_create_mode=True)
-                self.gui_map.draw_canvas()
+        self.gui_map.reset_canvas()
+        self.gui_edit.matrix.reset_grid()
+        self.update_states()
 
-        print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
+        # print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
 
+    def update_states(self, array_changes=None):
+        if array_changes is None:
+            array_changes = []
+            for rx, r in enumerate(self.array_states):
+                for cx, c in enumerate(r):
+                    state = c
+                    array_changes.append((rx, cx, state))
+
+        enforce_coords_array(array_changes)
+
+        for row, column, state in array_changes:
+            self.array_states[row][column] = state
+
+        if "gui_map" in self.__dict__:
+            self.gui_map.update_states(array_changes)
+
+        if "gui_edit" in self.__dict__:
+            if "matrix" in self.gui_edit.__dict__:
+                self.gui_edit.matrix.update_states(array_changes)
+    
     def create_map_window(self):
         if "window_map" in self.__dict__:
             self.window_map.destroy()
@@ -523,21 +603,12 @@ class WireWorldInstance:
     def advance_step(self):
         # Advance the wireworld instance to the next time step.
 
-        self.array_states, changed_coords = cycle_states(self.array_states)
+        array_changes = cycle_states(array_input=self.array_states)
+        self.update_states(array_changes=array_changes)
 
-        for rx, cx in changed_coords:
-            # changed_coords provides a list, which is used to identify each button that needs updating.
-            state = self.array_states[rx][cx]
-
-            target_button = self.gui_edit.matrix.grid_slaves(rx, cx)[0]
-            target_button.state = state
-
-            self.gui_map.create_update_cell(rx, cx, state, is_create_mode=False)
-
-        self.gui_map.update()
         self.time_ticker.ticks += 1
         # Terminal output of states.
-        print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
+        # print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
 
     def continuous_play_start(self):
         # Advance wireworld to the next time step every 0.5 seconds.
@@ -579,18 +650,11 @@ class WireWorldInstance:
 
     def resize(self, face: str, ranks=1):
         self.array_states, axis_shift, rank_shift = resize_array(array_input=self.array_states, face=face, ranks=ranks)
-        self.gui_map.draw_canvas()
-        for rx, r in enumerate(self.array_states):
-            for cx, c in enumerate(r):
-                try:
-                    target_button = self.gui_edit.matrix.grid_slaves(rx, cx)[0]
-                    if rank_shift != 0:
-                        if axis_shift == 0:
-                            target_button.row += rank_shift
-                        elif axis_shift == 1:
-                            target_button.column += rank_shift
-                except IndexError:      # will happen when growing array
-                    pass
+        if rank_shift != 0:
+            self.gui_edit.matrix.top_left_shift(axis_shift, rank_shift)
+        self.gui_map.reset_canvas()
+        self.gui_edit.matrix.reset_grid()
+        self.update_states()
 
 
 ########################################################################################################################
@@ -691,6 +755,14 @@ def check_2d_array(array_input):
         return format_ok
 
 
+def enforce_coords_array(array_input):
+    # format_ok = False
+    try:
+        np.ndim(array_input) == 2 and np.shape(array_input)[1] == 3
+    except:
+        raise Exception("Invalid array dimensions. Expected 2d array where second dimension has 3 elements")
+
+
 def cleanse_array(array_input):
     # Force the array's compliance with assumptions throughout this module.
     if not check_2d_array(array_input):
@@ -709,8 +781,8 @@ def cycle_states(array_input: np.ndarray):
     array_input = cleanse_array(array_input)
 
     # Store an array of all future states before setting any of them.
-    array_future = deepcopy(array_input)
-    changed_coords = []
+    # array_future = deepcopy(array_input)
+    array_changes = []
     for rx, r in enumerate(array_input):
         for cx, c in enumerate(r):
             state = c
@@ -732,37 +804,11 @@ def cycle_states(array_input: np.ndarray):
 
             if state_future is not None:    # avoid any processing for empty cells
                 # Set the calculated future state.
-                array_future[rx][cx] = state_future
+                # array_future[rx][cx] = state_future
                 # Provide a minimal list of those coordinates that have changed, for use in updating gui cells.
-                changed_coords.append([rx, cx])
+                array_changes.append([rx, cx, state_future])
 
-    return array_future, changed_coords
-
-
-# def pixels_from_array(array_input: np.ndarray):
-#     array_input = cleanse_array(array_input)
-#
-#     # array_pixels = [[()]]
-#
-#     # array_pixels = np.repeat(np.repeat(array_input, 3, 0), 3, 1)
-#     # array_pixels = deepcopy(array_input)
-#     # array_pixels = np.expand_dims(array_pixels, axis=1)
-#     array_colours = np.empty(np.shape(array_input) + (3,), dtype=np.uint8)
-#     for rx, r in enumerate(array_input):
-#         for cx, c in enumerate(r):
-#             state = c
-#             array_colours[rx][cx] = color_lookup_rgb[state]
-#             # state = c
-#             # row_lower = rx * 3
-#             # row_upper = (rx + 1) * 3
-#             # column_lower = cx * 3
-#             # column_upper = (cx + 1) * 3
-#             # array_pixels[row_lower:row_upper, column_lower:column_upper] = np.tile((color_lookup_rgb[state]), (3, 3))
-#
-#     img = Image.fromarray(array_colours, mode="RGB")
-#     array_pixels = img.load()
-#
-#     return img, array_pixels
+    return array_changes
 
 
 def print_states(array_input: np.ndarray, ticks: int):
