@@ -428,37 +428,35 @@ class WireWorldInstance:
                     self.create_cell(row=row, column=column)
 
         def create_cell(self, row, column):
-            x_lower = column * self.cell_size
-            y_lower = row * self.cell_size
-            x_upper = x_lower + self.cell_size
-            y_upper = y_lower + self.cell_size
+            c_lower = column * self.cell_size
+            r_lower = row * self.cell_size
+            c_upper = c_lower + self.cell_size
+            r_upper = r_lower + self.cell_size
             self.array_cells[row][column] = self.create_rectangle(
-                x_lower,
-                y_lower,
-                x_upper,
-                y_upper,
+                c_lower,
+                r_lower,
+                c_upper,
+                r_upper,
                 outline=self.color_lookup[0],
                 fill=self.color_lookup[0]
             )
 
-        def create_update_cell(self, row, column, state, is_create_mode=False):
-            target_colour = self.color_lookup[state]
-            if is_create_mode:
-                x_lower = column * self.cell_size
-                y_lower = row * self.cell_size
-                x_upper = x_lower + self.cell_size
-                y_upper = y_lower + self.cell_size
-                self.array_cells[row][column] = self.create_rectangle(
-                    x_lower,
-                    y_lower,
-                    x_upper,
-                    y_upper,
-                    outline=self.color_lookup[0],
-                    fill=target_colour
-                )
-            else:
-                target_item = self.array_cells[row][column]
-                self.itemconfigure(target_item, fill=target_colour)
+        def highlight_edit_box(self, top_left, dimensions):
+            r_lower = top_left[0]
+            c_lower = top_left[1]
+            r_upper = r_lower + dimensions[0]
+            c_upper = c_lower + dimensions[1]
+
+            # array_edit = self.array_cells[r_lower:r_upper, c_lower:c_upper]
+
+            for rx, r in self.array_cells:
+                for cx, c in r:
+                    target_rectangle = c
+                    if r_lower <= rx < r_upper and c_lower <= cx < c_upper:
+                        target_colour = "#d9d9d9"
+                    else:
+                        target_colour = self.color_lookup[0]
+                    self.itemconfigure(target_rectangle, outline=target_colour)
 
         def update_states(self, array_changes):
             enforce_coords_array(array_changes)
@@ -641,6 +639,28 @@ class WireWorldInstance:
         # New time ticker, new state array.
         self.time_ticker = self.TimeTicker(wireworld_parent=self)
         self.array_states = np.array([[0]])     # single empty cell
+        self.edit_top_left = [0, 0]
+        self.edit_dimensions = [1, 1]
+
+    def change_edit_box(self, top_left_new=None, dimensions_new=None):
+        if np.shape(top_left_new) == (2,):
+            self.edit_top_left = top_left_new
+
+        if np.shape(dimensions_new) == (2,):
+            self.edit_dimensions = dimensions_new
+
+        max_dimensions = [10, 10]
+        array_shape = np.shape(self.array_states)
+        row_offset = self.top_left[0]
+        column_offset = self.top_left[1]
+
+        self.dimensions[0] = min(max_dimensions[0], array_shape[0] - row_offset)
+        self.dimensions[1] = min(max_dimensions[1], array_shape[1] - column_offset)
+
+
+            
+        self.gui_map.highlight_edit_box(self.edit_top_left, self.edit_dimensions)
+
 
     def reset_to_original(self):
         # array_states_original is recorded from the initial array_states when parse_array is run.
