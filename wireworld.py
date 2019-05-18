@@ -308,16 +308,16 @@ class WireWorldInstance:
                 self.reset_grid()
 
             class ButtonWireCell(tk.Button):
-                def __init__(self, master, wireworld_parent, matrix_parent):
+                def __init__(self, master, wireworld_parent):
                     # Need to ensure a wireworld parent has been provided (class could be called independently).
                     enforce_type_wireworld(wireworld_parent)
                     self.wireworld_parent = wireworld_parent
 
-                    if "top_left" not in matrix_parent.__dict__:
-                        raise Exception("Wireworld edit cell unable to get top_left property of edit matrix")
+                    # if "top_left" not in matrix_parent.__dict__:
+                    #     raise Exception("Wireworld edit cell unable to get top_left property of edit matrix")
 
                     super().__init__(master)
-                    self.matrix_parent = matrix_parent
+                    # self.matrix_parent = matrix_parent
 
                     button_size = 15  # px
                     self.configure(
@@ -350,30 +350,28 @@ class WireWorldInstance:
                     else:
                         new_state = self.state - 1
 
-                    row = self.grid_info()["row"] + self.matrix_parent.top_left[0]
-                    column = self.grid_info()["column"] + self.matrix_parent.top_left[1]
+                    row = self.grid_info()["row"] + self.wireworld_parent.top_left[0]
+                    column = self.grid_info()["column"] + self.wireworld_parent.top_left[1]
 
                     array_changes = [(row, column, new_state)]
                     self.wireworld_parent.update_states(array_changes=array_changes)
 
-            def reset_grid(self):
+            def reset_grid(self, dimensions):
                 for i in self.grid_slaves():
                     i.destroy()
-                max_dimensions = [10, 10]
-                array_shape = np.shape(self.wireworld_parent.array_states)
-                row_offset = self.top_left[0]
-                column_offset = self.top_left[1]
+                # max_dimensions = [10, 10]
+                # array_shape = np.shape(self.wireworld_parent.array_states)
+                # row_offset = self.top_left[0]
+                # column_offset = self.top_left[1]
+                #
+                # self.dimensions[0] = min(max_dimensions[0], array_shape[0] - row_offset)
+                # self.dimensions[1] = min(max_dimensions[1], array_shape[1] - column_offset)
 
-                self.dimensions[0] = min(max_dimensions[0], array_shape[0] - row_offset)
-                self.dimensions[1] = min(max_dimensions[1], array_shape[1] - column_offset)
-
-
-                for row in range(self.dimensions[0]):
-                    for column in range(self.dimensions[1]):
+                for row in range(dimensions[0]):
+                    for column in range(dimensions[1]):
                         self.ButtonWireCell(
                             master=self,
-                            wireworld_parent=self.wireworld_parent,
-                            matrix_parent=self
+                            wireworld_parent=self.wireworld_parent
                         ).grid(
                             row=row,
                             column=column
@@ -389,15 +387,16 @@ class WireWorldInstance:
                 for row, column, state in array_changes:
                     if row_offset <= row < row_offset + row_count and \
                             column_offset <= column < column_offset + column_count:
-                                target_button = self.grid_slaves(
-                                    row=row - row_offset,
-                                    column=column - column_offset
-                                )[0]
-                                target_button.state = state
 
-            def top_left_shift(self, axis, ranks):
-                self.top_left[axis] = max(self.top_left[axis] + ranks, 0)
-                self.reset_grid()
+                        target_button = self.grid_slaves(
+                            row=row - row_offset,
+                            column=column - column_offset
+                        )[0]
+                        target_button.state = state
+
+            # def top_left_shift(self, axis, ranks):
+            #     self.top_left[axis] = max(self.top_left[axis] + ranks, 0)
+            #     self.reset_grid()
 
     class GuiMap(tk.Canvas):
         def __init__(self, master, wireworld_parent):
@@ -642,25 +641,31 @@ class WireWorldInstance:
         self.edit_top_left = [0, 0]
         self.edit_dimensions = [1, 1]
 
-    def change_edit_box(self, top_left_new=None, dimensions_new=None):
-        if np.shape(top_left_new) == (2,):
-            self.edit_top_left = top_left_new
+    def move_edit_box(self, axis: int, ranks: int):
+        if type(axis) is int and type(ranks) is int:
+            self.edit_top_left[axis] = max(self.edit_top_left[axis] + ranks, 0)
+        self.refresh_edit_box()
 
-        if np.shape(dimensions_new) == (2,):
-            self.edit_dimensions = dimensions_new
+    def new_edit_box(self, top_left: tuple):
+        if np.shape(top_left) == (2,):
+            self.edit_top_left = list(top_left)
+        self.refresh_edit_box()
 
+    def refresh_edit_box(self):
         max_dimensions = [10, 10]
         array_shape = np.shape(self.array_states)
-        row_offset = self.top_left[0]
-        column_offset = self.top_left[1]
+        row_offset = self.edit_top_left[0]
+        column_offset = self.edit_top_left[1]
 
-        self.dimensions[0] = min(max_dimensions[0], array_shape[0] - row_offset)
-        self.dimensions[1] = min(max_dimensions[1], array_shape[1] - column_offset)
+        self.edit_dimensions[0] = min(max_dimensions[0], array_shape[0] - row_offset)
+        self.edit_dimensions[1] = min(max_dimensions[1], array_shape[1] - column_offset)
 
+        if "gui_map" in self.__dict__:
+            self.gui_map.highlight_edit_box(self.edit_top_left, self.edit_dimensions)
 
-            
-        self.gui_map.highlight_edit_box(self.edit_top_left, self.edit_dimensions)
-
+        if "gui_edit" in self.__dict__:
+            if "matrix" in self.gui_edit.__dict__:
+                self.gui_edit.matrix.reset_grid(self.edit_dimensions)
 
     def reset_to_original(self):
         # array_states_original is recorded from the initial array_states when parse_array is run.
