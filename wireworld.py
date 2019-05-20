@@ -310,7 +310,7 @@ class WireWorldInstance:
                 # self.top_left = [0, 0]
                 # self.dimensions = [1, 1]
 
-                self.reset_grid(self.wireworld_parent.edit_dimensions)
+                self.reset_grid(self.wireworld_parent.edit_full_dimensions)
 
             class ButtonWireCell(tk.Button):
                 def __init__(self, master, wireworld_parent, hidden=False):
@@ -333,8 +333,7 @@ class WireWorldInstance:
                     )
 
                     self.hidden = hidden
-                    if not self.hidden:
-                        self.state = valid_states[0]
+                    self.state = valid_states[0]
 
                 def __setattr__(self, name, value):
                     # Included to make sure the colour is updated whenever state changes.
@@ -350,14 +349,15 @@ class WireWorldInstance:
                             )
                     elif name == "hidden":
                         if value:
+                            self.state = valid_states[0]
                             kwargs = {
-                                "relief": "FLAT",
-                                "state": "DISABLED"
+                                "relief": "flat",
+                                "state": "disabled"
                             }
                         else:
                             kwargs = {
-                                "relief": "RAISED",
-                                "state": "NORMAL"
+                                "relief": "raised",
+                                "state": "normal"
                             }
                         self.configure(**kwargs)
 
@@ -396,21 +396,41 @@ class WireWorldInstance:
                             column=column
                         )
 
-                self.enable_disable_cells()
+                self.refresh_grid()
 
-            def enable_disable_cells(self):
+            def refresh_grid(self):
                 array_shape = np.shape(self.wireworld_parent.array_states)
-                for i in self.grid_slaves():
-                    target_cell = i[0]
-                    hidden = target_cell.grid_info()[0] > array_shape[0] or target_cell.grid_info()[1] > array_shape[1]
-                    target_cell.configure(hidden=hidden)
+                for target_cell in self.grid_slaves():
+                    # target_cell = i[0]
+                    hidden =\
+                        target_cell.grid_info()["row"] >= array_shape[0] or\
+                        target_cell.grid_info()["column"] >= array_shape[1]
+                    target_cell.hidden = hidden
+
+                row_offset = self.wireworld_parent.edit_top_left[0]
+                column_offset = self.wireworld_parent.edit_top_left[1]
+                row_count = self.wireworld_parent.edit_full_dimensions[0]
+                column_count = self.wireworld_parent.edit_full_dimensions[1]
+                array_refresh = self.wireworld_parent.array_states[
+                                row_offset:row_offset + row_count,
+                                column_offset:column_offset + column_count
+                                ]
+
+                for rx, r in enumerate(array_refresh):
+                    for cx, c in enumerate(r):
+                        state = c
+                        target_button = self.grid_slaves(
+                            row=rx,
+                            column=cx
+                        )[0]
+                        target_button.state = state
 
             def update_states(self, array_changes):
                 enforce_coords_array(array_changes)
                 row_offset = self.wireworld_parent.edit_top_left[0]
                 column_offset = self.wireworld_parent.edit_top_left[1]
-                row_count = self.wireworld_parent.edit_dimensions[0]
-                column_count = self.wireworld_parent.edit_dimensions[1]
+                row_count = self.wireworld_parent.edit_full_dimensions[0]
+                column_count = self.wireworld_parent.edit_full_dimensions[1]
 
                 for row, column, state in array_changes:
                     if row_offset <= row < row_offset + row_count and \
@@ -454,7 +474,7 @@ class WireWorldInstance:
                 for column in range(array_shape[1]):
                     self.create_cell(row=row, column=column)
 
-            self.highlight_edit_box(self.wireworld_parent.edit_top_left, self.wireworld_parent.edit_dimensions)
+            self.highlight_edit_box(self.wireworld_parent.edit_top_left, self.wireworld_parent.edit_full_dimensions)
 
         def create_cell(self, row, column):
             c_lower = column * self.cell_size
@@ -675,8 +695,8 @@ class WireWorldInstance:
 
     def limit_edit_box(self, axis: int, new_value: int):
         array_shape = np.shape(self.array_states)
-        new_value = max(new_value, 0)
         new_value = min(new_value, array_shape[axis] - self.edit_full_dimensions[axis])
+        new_value = max(new_value, 0)
         return new_value
 
     def move_edit_box(self, axis: int, ranks: int):
@@ -714,9 +734,10 @@ class WireWorldInstance:
 
         if "gui_edit" in self.__dict__:
             if "matrix" in self.gui_edit.__dict__:
-                self.gui_edit.matrix.reset_grid(self.edit_dimensions)
+                # self.gui_edit.matrix.reset_grid(self.edit_dimensions)
+                self.gui_edit.matrix.refresh_grid()
 
-        self.update_states()
+        # self.update_states()
 
     def reset_to_original(self):
         # array_states_original is recorded from the initial array_states when parse_array is run.
@@ -726,11 +747,13 @@ class WireWorldInstance:
 
     def resize(self, face: str, ranks=1):
         self.array_states, axis_shift, rank_shift = resize_array(array_input=self.array_states, face=face, ranks=ranks)
-        if rank_shift != 0:
+        array_shape = np.shape(self.array_states)
+        if rank_shift != 0 and array_shape[axis_shift] > self.edit_full_dimensions[axis_shift]:
             # self.gui_edit.matrix.top_left_shift(axis_shift, rank_shift)
             self.move_edit_box(axis=axis_shift, ranks=rank_shift)
         self.gui_map.reset_canvas()
         # self.gui_edit.matrix.reset_grid()
+        self.gui_edit.matrix.refresh_grid()
         self.update_states()
 
 
