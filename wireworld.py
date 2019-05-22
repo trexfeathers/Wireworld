@@ -26,17 +26,6 @@ array_default = [
 
 valid_states = (0, 1, 2, 3)
 color_lookup = ("#d9d9d9", "#0000ff", "#ff0000", "#ffff00")
-# color_lookup = ("#646464", "#0000ff", "#ff0000", "#ffff00")
-
-
-def rgb_from_hex(hex_colour):
-    try:
-        return tuple(int(hex_colour[i:i + 2], 16) for i in (1, 3, 5))
-    except ValueError:
-        raise Exception("Invalid hex colour provided. Example format: #ff00ff")
-
-
-color_lookup_rgb = tuple([rgb_from_hex(i) for i in color_lookup])
 
 
 class WireWorldInstance:
@@ -44,7 +33,6 @@ class WireWorldInstance:
 
     def __init__(self):
         self.keep_playing = False
-        # self.edit_visible = False
 
         # Initialise the basic architecture.
         self.tk_root = tk.Tk()
@@ -61,44 +49,19 @@ class WireWorldInstance:
         self.__dict__[name] = value
         if name == "keep_playing" and tk_widget_exists(self, "gui_controls"):
             self.gui_controls.toggle_play_button(set_to_play=not value)
-        # elif name == "edit_visible" and "gui_controls" in self.__dict__:
-        #     self.gui_controls.toggle_edit_button(edit_shown=value)
-        #     if "gui_map" in self.__dict__:
-        #         self.gui_map.highlight_edit_box(
-        #             top_left=self.edit_top_left,
-        #             dimensions=self.edit_full_dimensions,
-        #             highlight_nothing=not value
-        #         )
+        elif name == "generations" and tk_widget_exists(self, "gui_controls"):
+            self.gui_controls.update_time_label(value)
         else:
             pass
 
     ####################################################################################################################
     # WireWorldInstance classes
 
-    class TimeTicker:
-        # Simple class containing the 'ticks' property.
-        # When ticks changes value, the gui label is updated to reflect this.
-        def __init__(self, wireworld_parent):
-            # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
-            enforce_type_wireworld(wireworld_parent)
-            # if "gui_controls" in wireworld_parent.__dict__:
-            if tk_widget_exists(wireworld_parent, "gui_controls"):
-                self.gui_controls = wireworld_parent.gui_controls
-            self.ticks = 0
-
-        def __setattr__(self, name, value):
-            self.__dict__[name] = value
-            if name == "ticks" and tk_widget_exists(self, "gui_controls"):
-                self.gui_controls.update_time_label(self.ticks)
-
     class GuiControls(tk.Frame):
         # The container for tkinter widgets controlling the wireworld instance.
         def __init__(self, master, wireworld_parent):
-            # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
-            enforce_type_wireworld(wireworld_parent)
-            self.wireworld_parent = wireworld_parent
             super().__init__(master)
-            # self.master = master
+            self.wireworld_parent = enforce_type_wireworld(wireworld_parent)
 
             # Used as kwargs when initiating every widget.
             button_standards = {
@@ -198,7 +161,6 @@ class WireWorldInstance:
 
             toggle_tk_widget(is_enable_mode=set_to_play, toggle_tuple=tuple(control_list))
             # Also everything in the gui grid if it exists yet:
-            # if "gui_edit" in self.wireworld_parent.__dict__:
             if tk_widget_exists(self.wireworld_parent, "gui_edit"):
                 toggle_tk_widget(
                     is_enable_mode=set_to_play,
@@ -219,7 +181,6 @@ class WireWorldInstance:
             )
 
         def toggle_edit_button(self, edit_shown: bool):
-            # toggle_tk_widget(is_enable_mode=edit_shown, toggle_tuple=(self.edit_button,))
             if edit_shown:
                 kwargs = {
                     "text": "Hide Edit Box",
@@ -236,14 +197,8 @@ class WireWorldInstance:
     class GuiEdit(tk.Frame):
         # The container for tkinter widgets displaying the wireworld instance.
         def __init__(self, master, wireworld_parent):
-            # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
-            enforce_type_wireworld(wireworld_parent)
-            self.wireworld_parent = wireworld_parent
-
             super().__init__(master)
-            # self.master = master
-            # Embedding an image in a widget prevents tk using font sizing of buttons (not square):
-            # self.blank_image = tk.PhotoImage()
+            self.wireworld_parent = enforce_type_wireworld(wireworld_parent)
 
             top_frame = tk.Frame(master=self)
             top_frame.pack(side=tk.TOP)
@@ -251,97 +206,31 @@ class WireWorldInstance:
             self.matrix = self.GuiEditMatrix(master=self,wireworld_parent=self.wireworld_parent)
             self.matrix.pack(side=tk.TOP)
 
-            for direction_text in ("add", "del", "nav"):
+            for control_type in ("add", "del", "nav"):
                 direction_control = self.GuiEditControls(
                     master=top_frame,
                     wireworld_parent=self.wireworld_parent,
-                    central_text=direction_text
+                    control_type=control_type
                 )
                 direction_control.pack(side=tk.LEFT)
-
-                # for widget_name in direction_control.__dict__:
-                #     widget = direction_control.__dict__[widget_name]
-                #     if type(widget) == WireWorldInstance.GuiEdit.GuiEditControls.ButtonNESW:
-                #         button = widget
-                for button in (
-                            direction_control.north,
-                            direction_control.east,
-                            direction_control.south,
-                            direction_control.west
-                        ):
-                        # direction_control.winfo_children():
-                    # ranks, axis, face = 1, 1, "n"
-                    #     if type(button) == WireWorldInstance.GuiEdit.GuiEditControls.ButtonNESW:
-                    if direction_text == "add" or (direction_text == "nav" and button.face in ("e", "s")):
-                        ranks = 1
-                    else:
-                        ranks = -1
-
-                    if direction_text == "nav":
-                        if button.face in ("n", "s"):
-                            axis = 0
-                        else:
-                            axis = 1
-                        button.configure(command=lambda: self.wireworld_parent.move_edit_box(axis=axis, ranks=ranks))
-                        # command = lambda: self.wireworld_parent.move_edit_box(axis=axis, ranks=ranks)
-                    elif direction_text in ("add", "del"):
-                        face = button.face
-                        button.configure(command=lambda: self.wireworld_parent.resize(face=face, ranks=ranks))
-                        # command = lambda: self.wireworld_parent.resize(face=face, ranks=ranks)
-                    # else:
-                    #     command = None
-
-                    # button.configure(command=command)
-
-            # self.controls_add = self.GuiEditControls(master=top_frame, wireworld_parent = self.wireworld_parent, central_text="add")
-            # self.controls_del = self.GuiEditControls(master=top_frame, wireworld_parent = self.wireworld_parent, central_text="del")
-            # self.controls_nav = self.GuiEditControls(master=top_frame, wireworld_parent = self.wireworld_parent, central_text="nav")
-            #
-            # self.controls_add.pack(side=tk.LEFT)
-            # self.controls_del.pack(side=tk.LEFT)
-            # self.controls_nav.pack(side=tk.LEFT)
-            #
-            # # TODO: write this more efficiently
-            # self.controls_add.north.configure(command=lambda: self.wireworld_parent.resize(face="n", ranks=1))
-            # self.controls_add.east.configure(command=lambda: self.wireworld_parent.resize(face="e", ranks=1))
-            # self.controls_add.south.configure(command=lambda: self.wireworld_parent.resize(face="s", ranks=1))
-            # self.controls_add.west.configure(command=lambda: self.wireworld_parent.resize(face="w", ranks=1))
-            #
-            # self.controls_del.north.configure(command=lambda: self.wireworld_parent.resize(face="n", ranks=-1))
-            # self.controls_del.east.configure(command=lambda: self.wireworld_parent.resize(face="e", ranks=-1))
-            # self.controls_del.south.configure(command=lambda: self.wireworld_parent.resize(face="s", ranks=-1))
-            # self.controls_del.west.configure(command=lambda: self.wireworld_parent.resize(face="w", ranks=-1))
-            #
-            # self.controls_nav.north.configure(command=lambda: self.wireworld_parent.move_edit_box(axis=0, ranks=-1))
-            # self.controls_nav.east.configure(command=lambda: self.wireworld_parent.move_edit_box(axis=1, ranks=1))
-            # self.controls_nav.south.configure(command=lambda: self.wireworld_parent.move_edit_box(axis=0, ranks=1))
-            # self.controls_nav.west.configure(command=lambda: self.wireworld_parent.move_edit_box(axis=1, ranks=-1))
 
             self.pack()
 
         class GuiEditControls(tk.Frame):
-            def __init__(self, master, wireworld_parent, central_text=" "):
-                # Need to ensure a wireworld parent has been provided (class could be called independently).
-                enforce_type_wireworld(wireworld_parent)
-                self.wireworld_parent = wireworld_parent
-
+            def __init__(self, master, wireworld_parent, control_type):
                 super().__init__(master)
-                # self.master = master
+                self.wireworld_parent = enforce_type_wireworld(wireworld_parent)
 
                 kwargs = {
                     "master": self,
-                    "wireworld_parent": self.wireworld_parent
+                    "wireworld_parent": self.wireworld_parent,
+                    "control_type": control_type
                 }
 
-                self.north = self.ButtonNESW(face="n", **kwargs)
-                self.east = self.ButtonNESW(face="e", **kwargs)
-                self.south = self.ButtonNESW(face="s", **kwargs)
-                self.west = self.ButtonNESW(face="w", **kwargs)
-
-                self.north.grid(row=0, column=2)
-                self.east.grid(row=1, column=3)
-                self.south.grid(row=2, column=2)
-                self.west.grid(row=1, column=1)
+                self.ButtonNESW(face="n", **kwargs).grid(row=0, column=2)
+                self.ButtonNESW(face="e", **kwargs).grid(row=1, column=3)
+                self.ButtonNESW(face="s", **kwargs).grid(row=2, column=2)
+                self.ButtonNESW(face="w", **kwargs).grid(row=1, column=1)
 
                 # spacers
                 tk.Label(master=self, text=" ").grid(row=1, column=0)
@@ -350,52 +239,55 @@ class WireWorldInstance:
 
                 tk.Label(
                     master=self,
-                    text=central_text,
+                    text=control_type,
                     font="Arial 8 bold"
                 ).grid(row=1, column=2)
 
                 self.pack()
 
             class ButtonNESW(tk.Button):
-                def __init__(self, master, wireworld_parent, face):
-                    # Need to ensure a wireworld parent has been provided (class could be called independently).
-                    enforce_type_wireworld(wireworld_parent)
-                    self.wireworld_parent = wireworld_parent
-
+                def __init__(self, master, wireworld_parent, face, control_type):
                     super().__init__(master)
-                    if face in ("n", "e", "s", "w"):
-                        self.face = face
+                    self.wireworld_parent = enforce_type_wireworld(wireworld_parent)
+
+                    if control_type == "add" or (control_type == "nav" and face in ("e", "s")):
+                        ranks = 1
+                    else:
+                        ranks = -1
+
+                    if control_type == "nav":
+                        if face in ("n", "s"):
+                            axis = 0
+                        else:
+                            axis = 1
+                        command = lambda: self.wireworld_parent.move_edit_box(axis=axis, ranks=ranks)
+                    elif control_type in ("add", "del"):
+                        command = lambda: self.wireworld_parent.resize(face=face, ranks=ranks)
+                    else:
+                        command = None
+
                     button_size = 8
                     self.configure(
                         image=self.wireworld_parent.blank_image,
                         height=button_size,
-                        width=button_size
+                        width=button_size,
+                        command=command
                     )
 
         class GuiEditMatrix(tk.Frame):
             def __init__(self, master, wireworld_parent):
-                # Need to ensure a wireworld parent has been provided (class could be called independently).
-                enforce_type_wireworld(wireworld_parent)
-                self.wireworld_parent = wireworld_parent
-
                 super().__init__(master)
+                self.wireworld_parent = enforce_type_wireworld(wireworld_parent)
 
                 # self.top_left = [0, 0]
                 # self.dimensions = [1, 1]
 
-                self.reset_grid(self.wireworld_parent.edit_full_dimensions)
+                self.reset_grid(self.wireworld_parent.edit_dimensions)
 
             class ButtonWireCell(tk.Button):
                 def __init__(self, master, wireworld_parent, hidden=False):
-                    # Need to ensure a wireworld parent has been provided (class could be called independently).
-                    enforce_type_wireworld(wireworld_parent)
-                    self.wireworld_parent = wireworld_parent
-
-                    # if "top_left" not in matrix_parent.__dict__:
-                    #     raise Exception("Wireworld edit cell unable to get top_left property of edit matrix")
-
                     super().__init__(master)
-                    # self.matrix_parent = matrix_parent
+                    self.wireworld_parent = enforce_type_wireworld(wireworld_parent)
 
                     button_size = 15  # px
                     self.configure(
@@ -451,13 +343,6 @@ class WireWorldInstance:
             def reset_grid(self, dimensions):
                 for i in self.grid_slaves():
                     i.destroy()
-                # max_dimensions = [10, 10]
-                # array_shape = np.shape(self.wireworld_parent.array_states)
-                # row_offset = self.top_left[0]
-                # column_offset = self.top_left[1]
-                #
-                # self.dimensions[0] = min(max_dimensions[0], array_shape[0] - row_offset)
-                # self.dimensions[1] = min(max_dimensions[1], array_shape[1] - column_offset)
 
                 for row in range(dimensions[0]):
                     for column in range(dimensions[1]):
@@ -482,8 +367,8 @@ class WireWorldInstance:
 
                 row_offset = self.wireworld_parent.edit_top_left[0]
                 column_offset = self.wireworld_parent.edit_top_left[1]
-                row_count = self.wireworld_parent.edit_full_dimensions[0]
-                column_count = self.wireworld_parent.edit_full_dimensions[1]
+                row_count = self.wireworld_parent.edit_dimensions[0]
+                column_count = self.wireworld_parent.edit_dimensions[1]
                 array_refresh = self.wireworld_parent.array_states[
                                 row_offset:row_offset + row_count,
                                 column_offset:column_offset + column_count
@@ -502,8 +387,8 @@ class WireWorldInstance:
                 enforce_coords_array(array_changes)
                 row_offset = self.wireworld_parent.edit_top_left[0]
                 column_offset = self.wireworld_parent.edit_top_left[1]
-                row_count = self.wireworld_parent.edit_full_dimensions[0]
-                column_count = self.wireworld_parent.edit_full_dimensions[1]
+                row_count = self.wireworld_parent.edit_dimensions[0]
+                column_count = self.wireworld_parent.edit_dimensions[1]
 
                 for row, column, state in array_changes:
                     if row_offset <= row < row_offset + row_count and \
@@ -515,18 +400,10 @@ class WireWorldInstance:
                         )[0]
                         target_button.state = state
 
-            # def top_left_shift(self, axis, ranks):
-            #     self.top_left[axis] = max(self.top_left[axis] + ranks, 0)
-            #     self.reset_grid()
-
     class GuiMap(tk.Canvas):
         def __init__(self, master, wireworld_parent):
-            # Need to ensure a wireworld parent has been provided (necessary since class could be called independently).
-            enforce_type_wireworld(wireworld_parent)
-            self.wireworld_parent = wireworld_parent
-
             super().__init__(master)
-            # self.master = master
+            self.wireworld_parent = enforce_type_wireworld(wireworld_parent)
             self.color_lookup = ("#646464",) + color_lookup[1:]
             self.cell_size = 5
             self.reset_canvas()
@@ -547,7 +424,7 @@ class WireWorldInstance:
                 for column in range(array_shape[1]):
                     self.create_cell(row=row, column=column)
 
-            self.highlight_edit_box(self.wireworld_parent.edit_top_left, self.wireworld_parent.edit_full_dimensions)
+            self.highlight_edit_box(self.wireworld_parent.edit_top_left, self.wireworld_parent.edit_dimensions)
 
             self.bind("<Button-1>", self.click_event)
 
@@ -592,8 +469,8 @@ class WireWorldInstance:
         def click_event(self, event):
             x_scaled = event.x / self.cell_size
             y_scaled = event.y / self.cell_size
-            x_centered = int(x_scaled - (self.wireworld_parent.edit_full_dimensions[0] / 2))
-            y_centered = int(y_scaled - (self.wireworld_parent.edit_full_dimensions[1] / 2))
+            x_centered = int(x_scaled - (self.wireworld_parent.edit_dimensions[0] / 2))
+            y_centered = int(y_scaled - (self.wireworld_parent.edit_dimensions[1] / 2))
             self.wireworld_parent.new_edit_box((y_centered, x_centered))
 
     ####################################################################################################################
@@ -652,14 +529,9 @@ class WireWorldInstance:
         self.array_states_original = deepcopy(self.array_states)
 
         self.create_map_window()
-        # self.create_edit_window()
-
-        # self.gui_map.reset_canvas()
-        # self.gui_edit.matrix.reset_grid()
-        # self.new_edit_box((0, 0))
         self.update_states()
 
-        # print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
+        # print_states(array_input=self.array_states, ticks=self.generations)
 
     def update_states(self, array_changes=None):
         if array_changes is None:
@@ -674,19 +546,15 @@ class WireWorldInstance:
         for row, column, state in array_changes:
             self.array_states[row][column] = state
 
-        # if "gui_map" in self.__dict__:
         if tk_widget_exists(self, "gui_map"):
-                self.gui_map.update_states(array_changes)
+            self.gui_map.update_states(array_changes)
 
-        # if "gui_edit" in self.__dict__:
         if tk_widget_exists(self, "gui_edit"):
-            # if "matrix" in self.gui_edit.__dict__:
             if tk_widget_exists(self.gui_edit, "matrix"):
                 if self.gui_edit.matrix.winfo_exists():
                     self.gui_edit.matrix.update_states(array_changes)
 
     def create_map_window(self):
-        # if "window_map" in self.__dict__:
         if tk_widget_exists(self, "window_map"):
             self.window_map.destroy()
         self.window_map = tk.Toplevel(self.tk_root)
@@ -694,7 +562,6 @@ class WireWorldInstance:
         # Set to re-disable relevant gui controls when the edit is closed.
         self.window_map.protocol("WM_DELETE_WINDOW", self.map_on_closing)
 
-        # if "gui_map" in self.__dict__:
         if tk_widget_exists(self, "gui_map"):
             self.gui_map.destroy()
         self.gui_map = self.GuiMap(master=self.window_map, wireworld_parent=self)
@@ -715,13 +582,10 @@ class WireWorldInstance:
         # Run when a grid window is closed.
         self.wipe_wireworld()
         self.toggle_edit_box(edit_visible=False)
-        # if "gui_controls" in self.__dict__:
         if tk_widget_exists(self, "gui_controls"):
             self.gui_controls.toggle_interaction_controls(is_enable_mode=False)
-        # if "window_map" in self.__dict__:
         if tk_widget_exists(self, "window_map"):
             self.window_map.destroy()
-        # if "window_edit" in self.__dict__:
         if tk_widget_exists(self, "window_edit"):
             self.window_edit.destroy()
 
@@ -737,7 +601,6 @@ class WireWorldInstance:
         self.window_edit.protocol("WM_DELETE_WINDOW", self.edit_on_closing)
 
         # Initiate or re-initiate the frame that will contain the edit gui.
-        # if "gui_edit" in self.__dict__:
         if tk_widget_exists(self, "gui_edit"):
             self.gui_edit.destroy()
         self.gui_edit = self.GuiEdit(master=self.window_edit, wireworld_parent=self)
@@ -756,24 +619,12 @@ class WireWorldInstance:
 
     def edit_on_closing(self):
         self.toggle_edit_box(edit_visible=False)
-        # if "gui_edit" in self.__dict__:
-        # if self.gui_edit.winfo_exists():
         if tk_widget_exists(self, "gui_edit"):
-            # for i in self.gui_edit.__dict__:
-            #     i = self.gui_edit.__dict__[i]
-            #     try:
-            #         i.destroy()
-            #     except:
-            #         pass
-
             self.gui_edit.destroy()
-        # if "window_edit" in self.__dict__:
-        # if self.window_edit.winfo_exists():
         if tk_widget_exists(self, "window_edit"):
             self.window_edit.destroy()
 
     def destroy_edit_window(self):
-        # if "window_edit" in self.__dict__:
         if tk_widget_exists(self, "window_edit"):
             self.window_edit.destroy()
 
@@ -783,9 +634,9 @@ class WireWorldInstance:
         array_changes = cycle_states(array_input=self.array_states)
         self.update_states(array_changes=array_changes)
 
-        self.time_ticker.ticks += 1
+        self.generations += 1
         # Terminal output of states.
-        # print_states(array_input=self.array_states, ticks=self.time_ticker.ticks)
+        # print_states(array_input=self.array_states, ticks=self.generations)
 
     def continuous_play_start(self):
         # Advance wireworld to the next time step every 0.5 seconds.
@@ -806,16 +657,16 @@ class WireWorldInstance:
 
     def wipe_wireworld(self):
         # New time ticker, new state array.
-        self.time_ticker = self.TimeTicker(wireworld_parent=self)
+        # self.time_ticker = self.TimeTicker(wireworld_parent=self)
+        self.generations = 0
         self.array_states = np.array([[0]])     # single empty cell
         if "edit_top_left" not in self.__dict__:
             self.edit_top_left = [0, 0]
-        self.edit_dimensions = [1, 1]
-        self.edit_full_dimensions = [10, 10]
+        self.edit_dimensions = [10, 10]
 
     def limit_edit_box(self, axis: int, new_value: int):
         array_shape = np.shape(self.array_states)
-        new_value = min(new_value, array_shape[axis] - self.edit_full_dimensions[axis])
+        new_value = min(new_value, array_shape[axis] - self.edit_dimensions[axis])
         new_value = max(new_value, 0)
         return new_value
 
@@ -823,9 +674,6 @@ class WireWorldInstance:
         if type(axis) is int and type(ranks) is int:
             new_value = self.edit_top_left[axis] + ranks
             new_value = self.limit_edit_box(axis=axis, new_value=new_value)
-            # new_top_left = self.edit_top_left[axis] + ranks
-            # new_top_left = max(new_top_left, 0)
-            # new_top_left = min(new_top_left, array_shape[axis] - self.edit_full_dimensions[axis])
             self.edit_top_left[axis] = new_value
         self.refresh_edit_box()
 
@@ -839,25 +687,11 @@ class WireWorldInstance:
         self.refresh_edit_box()
 
     def refresh_edit_box(self):
-        max_dimensions = [10, 10]
-        array_shape = np.shape(self.array_states)
-        row_dimensions = self.edit_full_dimensions[0]
-        column_dimensions = self.edit_full_dimensions[1]
-        row_offset = self.edit_top_left[0]
-        column_offset = self.edit_top_left[1]
-
-        self.edit_dimensions[0] = min(row_dimensions, array_shape[0] - row_offset)
-        self.edit_dimensions[1] = min(column_dimensions, array_shape[1] - column_offset)
-
-        # if "gui_map" in self.__dict__:
         if tk_widget_exists(self, "gui_map"):
             self.gui_map.highlight_edit_box(self.edit_top_left, self.edit_dimensions)
 
-        # if "gui_edit" in self.__dict__:
         if tk_widget_exists(self, "gui_edit"):
-            # if "matrix" in self.gui_edit.__dict__:
             if tk_widget_exists(self.gui_edit, "matrix"):
-                # self.gui_edit.matrix.reset_grid(self.edit_dimensions)
                 self.gui_edit.matrix.refresh_grid()
 
         # self.update_states()
@@ -868,14 +702,12 @@ class WireWorldInstance:
         else:
             self.destroy_edit_window()
 
-        # if "gui_controls" in self.__dict__:
         if tk_widget_exists(self, "gui_controls"):
             self.gui_controls.toggle_edit_button(edit_shown=edit_visible)
-        # if "gui_map" in self.__dict__:
         if tk_widget_exists(self, "gui_map"):
             self.gui_map.highlight_edit_box(
                 top_left=self.edit_top_left,
-                dimensions=self.edit_full_dimensions,
+                dimensions=self.edit_dimensions,
                 highlight_nothing=not edit_visible
             )
 
@@ -888,7 +720,7 @@ class WireWorldInstance:
     def resize(self, face: str, ranks=1):
         self.array_states, axis_shift, rank_shift = resize_array(array_input=self.array_states, face=face, ranks=ranks)
         array_shape = np.shape(self.array_states)
-        if rank_shift != 0 and array_shape[axis_shift] > self.edit_full_dimensions[axis_shift]:
+        if rank_shift != 0 and array_shape[axis_shift] > self.edit_dimensions[axis_shift]:
             # self.gui_edit.matrix.top_left_shift(axis_shift, rank_shift)
             self.move_edit_box(axis=axis_shift, ranks=rank_shift)
         self.gui_map.reset_canvas()
@@ -902,9 +734,12 @@ class WireWorldInstance:
 
 
 def enforce_type_wireworld(input_class: WireWorldInstance):
-    # Used by several classes to make sure they have been provided with a reference to a parent WireWorldInstance.
+    # Used by several classes to make sure they have been provided with a reference to a parent WireWorldInstance
+    # (since they could be called independently).
     if not isinstance(input_class, WireWorldInstance):
         raise Exception("class type check failed = must be type WireWorldInstance")
+    else:
+        return input_class
 
 
 def save_file(path_input: str, array_input):
